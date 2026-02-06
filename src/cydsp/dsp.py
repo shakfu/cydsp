@@ -12,6 +12,8 @@ import numpy as np
 from cydsp.buffer import AudioBuffer
 from cydsp._core import filters, fft, delay as _delay, envelopes, rates, mix
 from cydsp._core import daisysp as _daisysp
+from cydsp._core import madronalib as _madronalib
+from cydsp._core import stk as _stk
 
 
 # ---------------------------------------------------------------------------
@@ -2556,3 +2558,1265 @@ def drip(
     d.init(sample_rate, dettack)
     data = d.process(frames)
     return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# Pure numpy utilities
+# ---------------------------------------------------------------------------
+
+
+def normalize_peak(buf: AudioBuffer, target_db: float = 0.0) -> AudioBuffer:
+    """Normalize peak amplitude to *target_db* dBFS."""
+    peak = np.max(np.abs(buf.data))
+    if peak == 0.0:
+        return buf.copy()
+    target_linear = 10.0 ** (target_db / 20.0)
+    scale = np.float32(target_linear / peak)
+    return AudioBuffer(
+        buf.data * scale,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def trim_silence(
+    buf: AudioBuffer,
+    threshold_db: float = -60.0,
+    pad_frames: int = 0,
+) -> AudioBuffer:
+    """Trim leading and trailing silence below *threshold_db*."""
+    threshold_linear = 10.0 ** (threshold_db / 20.0)
+    # Max across channels at each frame
+    frame_peaks = np.max(np.abs(buf.data), axis=0)
+    above = np.nonzero(frame_peaks > threshold_linear)[0]
+    if len(above) == 0:
+        # All silence -- return empty buffer with same metadata
+        return AudioBuffer(
+            np.zeros((buf.channels, 0), dtype=np.float32),
+            sample_rate=buf.sample_rate,
+            channel_layout=buf.channel_layout,
+            label=buf.label,
+        )
+    first = max(0, int(above[0]) - pad_frames)
+    last = min(buf.frames, int(above[-1]) + 1 + pad_frames)
+    return buf.slice(first, last)
+
+
+def fade_in(
+    buf: AudioBuffer,
+    duration_ms: float = 10.0,
+    curve: str = "linear",
+) -> AudioBuffer:
+    """Apply a fade-in over *duration_ms* milliseconds."""
+    n_samples = max(1, int(buf.sample_rate * duration_ms / 1000.0))
+    n_samples = min(n_samples, buf.frames)
+    ramp = np.linspace(0.0, 1.0, n_samples, dtype=np.float32)
+    ramp = _apply_fade_curve(ramp, curve)
+    out = buf.data.copy()
+    out[:, :n_samples] *= ramp[np.newaxis, :]
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def fade_out(
+    buf: AudioBuffer,
+    duration_ms: float = 10.0,
+    curve: str = "linear",
+) -> AudioBuffer:
+    """Apply a fade-out over *duration_ms* milliseconds."""
+    n_samples = max(1, int(buf.sample_rate * duration_ms / 1000.0))
+    n_samples = min(n_samples, buf.frames)
+    ramp = np.linspace(1.0, 0.0, n_samples, dtype=np.float32)
+    ramp = _apply_fade_curve(ramp, curve, inverse=True)
+    out = buf.data.copy()
+    out[:, -n_samples:] *= ramp[np.newaxis, :]
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def _apply_fade_curve(
+    ramp: np.ndarray,
+    curve: str,
+    inverse: bool = False,
+) -> np.ndarray:
+    """Map a [0,1] ramp through a fade curve.
+
+    For fade_in: ramp goes 0->1, curve shapes the rise.
+    For fade_out (inverse=True): ramp goes 1->0, we apply the
+    curve to the underlying 0->1 parameter then flip.
+    """
+    proj = _madronalib.projections
+    if curve == "linear":
+        return ramp
+    # Normalize to 0->1 parameter for curve application
+    if inverse:
+        t = 1.0 - ramp  # 0->1
+    else:
+        t = ramp
+    t = np.ascontiguousarray(t, dtype=np.float32)
+    if curve == "ease_in":
+        shaped = np.asarray(proj.ease_in(t), dtype=np.float32)
+    elif curve == "ease_out":
+        shaped = np.asarray(proj.ease_out(t), dtype=np.float32)
+    elif curve == "smoothstep":
+        shaped = np.asarray(proj.smoothstep(t), dtype=np.float32)
+    else:
+        raise ValueError(
+            f"Unknown fade curve {curve!r}, valid: 'linear', 'ease_in', "
+            "'ease_out', 'smoothstep'"
+        )
+    if inverse:
+        return 1.0 - shaped
+    return shaped
+
+
+def pan(buf: AudioBuffer, position: float = 0.0) -> AudioBuffer:
+    """Pan a signal using equal-power panning.
+
+    *position*: -1.0 = hard left, 0.0 = center, 1.0 = hard right.
+    Mono input produces stereo output. Stereo input scales L/R gains.
+    """
+    theta = (position + 1.0) / 2.0 * (np.pi / 2.0)
+    left_gain = np.float32(np.cos(theta))
+    right_gain = np.float32(np.sin(theta))
+
+    if buf.channels == 1:
+        out = np.zeros((2, buf.frames), dtype=np.float32)
+        out[0] = buf.data[0] * left_gain
+        out[1] = buf.data[0] * right_gain
+        return AudioBuffer(
+            out,
+            sample_rate=buf.sample_rate,
+            channel_layout="stereo",
+            label=buf.label,
+        )
+
+    # Stereo or multi-channel: scale first two channels
+    out = buf.data.copy()
+    out[0] *= left_gain
+    if buf.channels >= 2:
+        out[1] *= right_gain
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def mix_buffers(*buffers: AudioBuffer, gains: list[float] | None = None) -> AudioBuffer:
+    """Sum multiple AudioBuffers with optional per-buffer gains.
+
+    All buffers must share the same sample_rate. Shorter buffers are
+    zero-padded to the length of the longest.
+    """
+    if not buffers:
+        raise ValueError("At least one buffer required")
+    # Flatten if called with a single list
+    if len(buffers) == 1 and isinstance(buffers[0], (list, tuple)):
+        buffers = tuple(buffers[0])
+    if gains is None:
+        gains = [1.0] * len(buffers)
+    if len(gains) != len(buffers):
+        raise ValueError(
+            f"gains length ({len(gains)}) must match number of buffers ({len(buffers)})"
+        )
+    sr = buffers[0].sample_rate
+    for b in buffers[1:]:
+        if b.sample_rate != sr:
+            raise ValueError(
+                f"Sample rate mismatch: {sr} vs {b.sample_rate}"
+            )
+    max_channels = max(b.channels for b in buffers)
+    max_frames = max(b.frames for b in buffers)
+    out = np.zeros((max_channels, max_frames), dtype=np.float32)
+    for b, g in zip(buffers, gains):
+        data = b.data
+        # Broadcast mono to multi-channel if needed
+        if data.shape[0] == 1 and max_channels > 1:
+            data = np.tile(data, (max_channels, 1))
+        out[:data.shape[0], :data.shape[1]] += data * np.float32(g)
+    return AudioBuffer(out, sample_rate=sr, label=buffers[0].label)
+
+
+# ---------------------------------------------------------------------------
+# Mid-side processing
+# ---------------------------------------------------------------------------
+
+
+def mid_side_encode(buf: AudioBuffer) -> AudioBuffer:
+    """Encode stereo [L, R] to mid-side [M, S].
+
+    M = (L + R) / 2, S = (L - R) / 2.
+    """
+    if buf.channels != 2:
+        raise ValueError(
+            f"mid_side_encode requires stereo input, got {buf.channels} channels"
+        )
+    mid = (buf.data[0] + buf.data[1]) * 0.5
+    side = (buf.data[0] - buf.data[1]) * 0.5
+    out = np.stack([mid, side]).astype(np.float32)
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+def mid_side_decode(buf: AudioBuffer) -> AudioBuffer:
+    """Decode mid-side [M, S] back to stereo [L, R].
+
+    L = M + S, R = M - S.
+    """
+    if buf.channels != 2:
+        raise ValueError(
+            f"mid_side_decode requires 2-channel [M, S] input, got {buf.channels} channels"
+        )
+    left = buf.data[0] + buf.data[1]
+    right = buf.data[0] - buf.data[1]
+    out = np.stack([left, right]).astype(np.float32)
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+def stereo_widen(buf: AudioBuffer, width: float = 1.5) -> AudioBuffer:
+    """Adjust stereo width via mid-side processing.
+
+    *width*: 0.0 = mono, 1.0 = unchanged, >1.0 = wider.
+    """
+    if buf.channels != 2:
+        raise ValueError(
+            f"stereo_widen requires stereo input, got {buf.channels} channels"
+        )
+    ms = mid_side_encode(buf)
+    ms.data[1] *= np.float32(width)
+    return mid_side_decode(ms)
+
+
+# ---------------------------------------------------------------------------
+# Saturation
+# ---------------------------------------------------------------------------
+
+
+def saturate(
+    buf: AudioBuffer,
+    drive: float = 0.5,
+    mode: str = "soft",
+) -> AudioBuffer:
+    """Apply saturation/distortion.
+
+    Modes:
+    - ``'soft'``: tanh soft clipping, normalized to preserve peak.
+    - ``'hard'``: hard clipping to [-1, 1].
+    - ``'tape'``: asymmetric soft clip ``x - x^3/3``.
+
+    *drive*: 0.0 to 1.0 controls intensity (maps to gain 1x-10x).
+    """
+    drive_scaled = np.float32(1.0 + drive * 9.0)
+    data = buf.data * drive_scaled
+
+    if mode == "soft":
+        out = np.tanh(data)
+        # Normalize to preserve original peak
+        peak_in = np.max(np.abs(buf.data))
+        peak_out = np.max(np.abs(out))
+        if peak_out > 0 and peak_in > 0:
+            out *= np.float32(peak_in / peak_out)
+    elif mode == "hard":
+        out = np.clip(data, -1.0, 1.0)
+    elif mode == "tape":
+        # Asymmetric soft clip: x - x^3/3 for |x| < 1, clamped otherwise
+        out = np.where(
+            np.abs(data) < 1.0,
+            data - (data ** 3) / 3.0,
+            np.sign(data) * 2.0 / 3.0,
+        )
+        # Normalize to preserve original peak
+        peak_in = np.max(np.abs(buf.data))
+        peak_out = np.max(np.abs(out))
+        if peak_out > 0 and peak_in > 0:
+            out *= np.float32(peak_in / peak_out)
+    else:
+        raise ValueError(
+            f"Unknown saturation mode {mode!r}, valid: 'soft', 'hard', 'tape'"
+        )
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Composed effects
+# ---------------------------------------------------------------------------
+
+
+def exciter(
+    buf: AudioBuffer,
+    freq: float = 3000.0,
+    amount: float = 0.3,
+) -> AudioBuffer:
+    """Add harmonics above *freq* via saturation.
+
+    Highpass-filters, saturates to generate harmonics, highpasses again
+    to clean up, and blends back into the original.
+    """
+    highs = highpass(buf, freq)
+    saturated = saturate(highs, drive=0.7, mode="soft")
+    harmonics = highpass(saturated, freq)
+    # Blend: output = original + amount * harmonics
+    out = buf.data + np.float32(amount) * harmonics.data
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def de_esser(
+    buf: AudioBuffer,
+    freq: float = 6000.0,
+    threshold_db: float = -20.0,
+    ratio: float = 4.0,
+    bandwidth: float = 2.0,
+) -> AudioBuffer:
+    """Reduce sibilance around *freq* Hz.
+
+    Extracts the sibilant band, compresses it, and replaces the
+    original band with the compressed version.
+    """
+    bp = bandpass(buf, freq, octaves=bandwidth)
+    compressed_bp = compress(bp, ratio=ratio, threshold=threshold_db, attack=0.001, release=0.05)
+    # Replace original band with compressed version
+    out = buf.data - bp.data + compressed_bp.data
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+def parallel_compress(
+    buf: AudioBuffer,
+    mix: float = 0.5,
+    ratio: float = 8.0,
+    threshold_db: float = -30.0,
+    attack: float = 0.001,
+    release: float = 0.05,
+) -> AudioBuffer:
+    """Blend heavily compressed signal with dry signal (New York compression)."""
+    compressed = compress(
+        buf, ratio=ratio, threshold=threshold_db, attack=attack, release=release
+    )
+    out = (1.0 - mix) * buf.data + mix * compressed.data
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FDN Reverb
+# ---------------------------------------------------------------------------
+
+_REVERB_PRESETS: dict[str, dict] = {
+    "room": {
+        "delays": [197, 251, 337, 433, 521, 617, 743, 859],
+        "base_cutoff": 0.35,
+    },
+    "hall": {
+        "delays": [487, 631, 809, 997, 1151, 1327, 1493, 1657],
+        "base_cutoff": 0.25,
+    },
+    "plate": {
+        "delays": [149, 211, 307, 401, 491, 587, 677, 769],
+        "base_cutoff": 0.45,
+    },
+    "chamber": {
+        "delays": [317, 409, 523, 641, 751, 877, 1009, 1129],
+        "base_cutoff": 0.30,
+    },
+    "cathedral": {
+        "delays": [1013, 1259, 1493, 1741, 1997, 2243, 2503, 2749],
+        "base_cutoff": 0.15,
+    },
+}
+
+
+def reverb(
+    buf: AudioBuffer,
+    preset: str = "hall",
+    mix: float = 0.3,
+    decay: float = 0.8,
+    damping: float = 0.5,
+    pre_delay_ms: float = 0.0,
+) -> AudioBuffer:
+    """FDN reverb with presets.
+
+    Parameters
+    ----------
+    preset : str
+        One of 'room', 'hall', 'plate', 'chamber', 'cathedral'.
+    mix : float
+        Wet/dry blend (0.0 = fully dry, 1.0 = fully wet).
+    decay : float
+        Feedback gain per delay line (0.0 to <1.0).
+    damping : float
+        Controls lowpass filtering in feedback (0.0 = bright, 1.0 = dark).
+    pre_delay_ms : float
+        Pre-delay in milliseconds before reverb onset.
+    """
+    if preset not in _REVERB_PRESETS:
+        raise ValueError(
+            f"Unknown reverb preset {preset!r}, valid: {list(_REVERB_PRESETS.keys())}"
+        )
+    cfg = _REVERB_PRESETS[preset]
+    sr = buf.sample_rate
+
+    # Scale delay times for sample rate
+    sr_scale = sr / 48000.0
+    delay_times = [float(d * sr_scale) for d in cfg["delays"]]
+
+    # Mono-sum input for FDN processing
+    if buf.channels > 1:
+        mono_data = np.mean(buf.data, axis=0).astype(np.float32)
+    else:
+        mono_data = buf.data[0].copy()
+
+    # Pre-delay: prepend silence
+    if pre_delay_ms > 0:
+        pre_samples = int(sr * pre_delay_ms / 1000.0)
+        mono_data = np.concatenate([
+            np.zeros(pre_samples, dtype=np.float32),
+            mono_data,
+        ])
+
+    # Pad to multiple of 64 for madronalib DSPVector processing
+    remainder = len(mono_data) % 64
+    if remainder != 0:
+        pad_len = 64 - remainder
+        mono_data = np.pad(mono_data, (0, pad_len), mode="constant")
+
+    mono_data = np.ascontiguousarray(mono_data, dtype=np.float32)
+
+    # Create and configure FDN8
+    fdn = _madronalib.reverbs.FDN8()
+    fdn.set_delays_in_samples(delay_times)
+    cutoff = cfg["base_cutoff"] * (1.0 - damping * 0.8)
+    fdn.set_filter_cutoffs([cutoff] * 8)
+    fdn.set_feedback_gains([decay] * 8)
+
+    # Process: FDN8 returns [2, N] stereo
+    wet_stereo = np.asarray(fdn.process(mono_data), dtype=np.float32)
+
+    # Trim back to original length (remove padding and pre-delay extension)
+    target_frames = buf.frames
+    wet_stereo = wet_stereo[:, :target_frames]
+    # If wet is shorter than target (shouldn't happen, but guard)
+    if wet_stereo.shape[1] < target_frames:
+        wet_stereo = np.pad(
+            wet_stereo,
+            ((0, 0), (0, target_frames - wet_stereo.shape[1])),
+            mode="constant",
+        )
+
+    # Prepare dry stereo
+    if buf.channels == 1:
+        dry_stereo = np.tile(buf.data, (2, 1))
+    elif buf.channels == 2:
+        dry_stereo = buf.data
+    else:
+        # Multi-channel: downmix to stereo for blending
+        dry_stereo = np.zeros((2, buf.frames), dtype=np.float32)
+        dry_stereo[0] = np.mean(buf.data[:buf.channels // 2], axis=0)
+        dry_stereo[1] = np.mean(buf.data[buf.channels // 2:], axis=0)
+
+    # Wet/dry blend
+    out = (1.0 - mix) * dry_stereo + mix * wet_stereo
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mastering chain
+# ---------------------------------------------------------------------------
+
+
+def master(
+    buf: AudioBuffer,
+    target_lufs: float = -14.0,
+    eq: dict | None = None,
+    compress_on: bool = True,
+    limit_on: bool = True,
+    dc_block_on: bool = True,
+) -> AudioBuffer:
+    """Simple mastering chain.
+
+    Chain order: dc_block -> EQ -> compress -> limit -> normalize_lufs.
+
+    Parameters
+    ----------
+    eq : dict or None
+        Optional EQ with keys:
+        - ``'low_shelf'``: ``(freq_hz, gain_db)`` or ``(freq_hz, gain_db, octaves)``
+        - ``'high_shelf'``: ``(freq_hz, gain_db)`` or ``(freq_hz, gain_db, octaves)``
+        - ``'peak'``: single ``(freq_hz, gain_db)`` or ``(freq_hz, gain_db, octaves)``,
+          or a list of such tuples for multi-band.
+    compress_on : bool
+        Enable compression stage.
+    limit_on : bool
+        Enable limiting stage.
+    dc_block_on : bool
+        Enable DC blocking stage.
+    """
+    result = buf
+
+    # DC block
+    if dc_block_on:
+        result = dc_block(result)
+
+    # EQ
+    if eq is not None:
+        if "low_shelf" in eq:
+            params = eq["low_shelf"]
+            if len(params) == 2:
+                result = low_shelf_db(result, params[0], params[1])
+            else:
+                result = low_shelf_db(result, params[0], params[1], octaves=params[2])
+        if "high_shelf" in eq:
+            params = eq["high_shelf"]
+            if len(params) == 2:
+                result = high_shelf_db(result, params[0], params[1])
+            else:
+                result = high_shelf_db(result, params[0], params[1], octaves=params[2])
+        if "peak" in eq:
+            peak_params = eq["peak"]
+            # Single band or list of bands
+            if isinstance(peak_params[0], (list, tuple)):
+                bands = peak_params
+            else:
+                bands = [peak_params]
+            for p in bands:
+                if len(p) == 2:
+                    result = peak_db(result, p[0], p[1])
+                else:
+                    result = peak_db(result, p[0], p[1], octaves=p[2])
+
+    # Compress
+    if compress_on:
+        result = compress(result, ratio=3.0, threshold=-18.0, attack=0.01, release=0.1)
+
+    # Limit
+    if limit_on:
+        result = limit(result, pre_gain=1.0)
+
+    # Normalize
+    result = normalize_lufs(result, target_lufs=target_lufs)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Resample
+# ---------------------------------------------------------------------------
+
+
+def resample(buf: AudioBuffer, target_sr: float) -> AudioBuffer:
+    """Resample audio to a different sample rate.
+
+    Uses madronalib Downsampler/Upsampler for power-of-2 ratios
+    (higher quality), and linear interpolation for arbitrary ratios.
+    """
+    if target_sr == buf.sample_rate:
+        return buf.copy()
+
+    ratio = target_sr / buf.sample_rate
+
+    # Check if ratio is a power of 2 (up or down)
+    octaves = None
+    if ratio > 1.0:
+        r = ratio
+        o = 0
+        while r > 1.0 and r == int(r) and int(r) & (int(r) - 1) == 0:
+            r /= 2.0
+            o += 1
+        if r == 1.0 and o > 0:
+            octaves = o
+    elif ratio < 1.0:
+        r = 1.0 / ratio
+        o = 0
+        while r > 1.0 and r == int(r) and int(r) & (int(r) - 1) == 0:
+            r /= 2.0
+            o += 1
+        if r == 1.0 and o > 0:
+            octaves = -o
+
+    out_channels = []
+    for ch in range(buf.channels):
+        ch_data = np.ascontiguousarray(buf.data[ch], dtype=np.float32)
+
+        if octaves is not None and octaves > 0:
+            # Upsample by power of 2
+            remainder = len(ch_data) % 64
+            if remainder != 0:
+                ch_data = np.pad(ch_data, (0, 64 - remainder), mode="constant")
+            up = _madronalib.resampling.Upsampler(octaves)
+            resampled = np.asarray(up.process(ch_data, octaves), dtype=np.float32)
+            # Trim to expected length
+            expected_len = buf.frames * (1 << octaves)
+            resampled = resampled[:expected_len]
+            out_channels.append(resampled)
+        elif octaves is not None and octaves < 0:
+            # Downsample by power of 2
+            abs_oct = -octaves
+            remainder = len(ch_data) % 64
+            if remainder != 0:
+                ch_data = np.pad(ch_data, (0, 64 - remainder), mode="constant")
+            down = _madronalib.resampling.Downsampler(abs_oct)
+            resampled = np.asarray(down.process(ch_data), dtype=np.float32)
+            # Trim to expected length
+            expected_len = buf.frames // (1 << abs_oct)
+            resampled = resampled[:expected_len]
+            out_channels.append(resampled)
+        else:
+            # Arbitrary ratio: linear interpolation
+            target_frames = max(1, round(buf.frames * ratio))
+            old_x = np.linspace(0.0, 1.0, buf.frames, dtype=np.float64)
+            new_x = np.linspace(0.0, 1.0, target_frames, dtype=np.float64)
+            resampled = np.interp(new_x, old_x, ch_data.astype(np.float64))
+            out_channels.append(resampled.astype(np.float32))
+
+    out = np.stack(out_channels)
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=target_sr,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Noise gate
+# ---------------------------------------------------------------------------
+
+
+def noise_gate(
+    buf: AudioBuffer,
+    threshold_db: float = -40.0,
+    attack: float = 0.001,
+    release: float = 0.05,
+    hold_ms: float = 10.0,
+) -> AudioBuffer:
+    """Gate signal below *threshold_db*, silencing quiet passages.
+
+    Parameters
+    ----------
+    threshold_db : float
+        Gate threshold in dB. Signal below this is attenuated.
+    attack : float
+        Gate open time in seconds.
+    release : float
+        Gate close time in seconds.
+    hold_ms : float
+        Hold time in milliseconds after signal drops below threshold
+        before the gate starts closing.
+    """
+    sr = buf.sample_rate
+    threshold_lin = 10.0 ** (threshold_db / 20.0)
+    attack_samples = max(1, int(sr * attack))
+    release_samples = max(1, int(sr * release))
+    hold_samples = max(0, int(sr * hold_ms / 1000.0))
+
+    # Compute envelope across all channels (max abs at each frame)
+    envelope = np.max(np.abs(buf.data), axis=0)
+
+    # Build gain curve: 1.0 when open, 0.0 when closed
+    gain = np.zeros(buf.frames, dtype=np.float32)
+    gate_open = False
+    hold_counter = 0
+
+    for i in range(buf.frames):
+        if envelope[i] >= threshold_lin:
+            gate_open = True
+            hold_counter = hold_samples
+        elif hold_counter > 0:
+            hold_counter -= 1
+        else:
+            gate_open = False
+
+        gain[i] = 1.0 if gate_open else 0.0
+
+    # Smooth the gain curve with attack/release
+    smoothed = np.zeros_like(gain)
+    current = 0.0
+    for i in range(buf.frames):
+        target = gain[i]
+        if target > current:
+            # Opening: attack
+            coeff = 1.0 / attack_samples
+            current = min(current + coeff, target)
+        else:
+            # Closing: release
+            coeff = 1.0 / release_samples
+            current = max(current - coeff, target)
+        smoothed[i] = current
+
+    out = buf.data * smoothed[np.newaxis, :]
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stereo delay
+# ---------------------------------------------------------------------------
+
+
+def stereo_delay(
+    buf: AudioBuffer,
+    left_ms: float = 250.0,
+    right_ms: float = 375.0,
+    feedback: float = 0.3,
+    mix: float = 0.5,
+    ping_pong: bool = False,
+) -> AudioBuffer:
+    """Stereo delay effect.
+
+    Parameters
+    ----------
+    left_ms, right_ms : float
+        Delay times for left and right channels in milliseconds.
+    feedback : float
+        Feedback amount (0.0 to <1.0).
+    mix : float
+        Wet/dry blend (0.0 = dry, 1.0 = fully wet).
+    ping_pong : bool
+        If True, feedback crosses between L/R channels.
+    """
+    sr = buf.sample_rate
+    left_samples = int(sr * left_ms / 1000.0)
+    right_samples = int(sr * right_ms / 1000.0)
+    max_delay = max(left_samples, right_samples) + 1
+
+    # Ensure stereo input
+    if buf.channels == 1:
+        dry = np.tile(buf.data, (2, 1))
+    elif buf.channels == 2:
+        dry = buf.data.copy()
+    else:
+        raise ValueError(
+            f"stereo_delay requires mono or stereo input, got {buf.channels} channels"
+        )
+
+    n_frames = buf.frames
+    wet = np.zeros((2, n_frames), dtype=np.float32)
+
+    # Simple delay line buffers
+    buf_l = np.zeros(max_delay, dtype=np.float32)
+    buf_r = np.zeros(max_delay, dtype=np.float32)
+    write_pos = 0
+
+    for i in range(n_frames):
+        # Read from delay lines
+        read_l = (write_pos - left_samples) % max_delay
+        read_r = (write_pos - right_samples) % max_delay
+        delayed_l = buf_l[read_l]
+        delayed_r = buf_r[read_r]
+
+        wet[0, i] = delayed_l
+        wet[1, i] = delayed_r
+
+        # Write to delay lines with feedback
+        if ping_pong:
+            # Cross-feed: left delay gets right feedback, right gets left
+            buf_l[write_pos] = dry[0, i] + feedback * delayed_r
+            buf_r[write_pos] = dry[1, i] + feedback * delayed_l
+        else:
+            buf_l[write_pos] = dry[0, i] + feedback * delayed_l
+            buf_r[write_pos] = dry[1, i] + feedback * delayed_r
+
+        write_pos = (write_pos + 1) % max_delay
+
+    out = (1.0 - mix) * dry + mix * wet
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Multiband compression
+# ---------------------------------------------------------------------------
+
+
+def multiband_compress(
+    buf: AudioBuffer,
+    crossover_freqs: list[float] | None = None,
+    ratios: list[float] | None = None,
+    thresholds: list[float] | None = None,
+    attack: float = 0.01,
+    release: float = 0.1,
+) -> AudioBuffer:
+    """Split into frequency bands, compress each independently, and recombine.
+
+    Parameters
+    ----------
+    crossover_freqs : list[float] or None
+        Crossover frequencies in Hz. Defaults to [200, 2000, 8000] (4 bands).
+    ratios : list[float] or None
+        Compression ratio per band (len = len(crossover_freqs) + 1).
+        Defaults to [2.0, 3.0, 3.0, 2.0].
+    thresholds : list[float] or None
+        Threshold in dB per band. Defaults to [-24, -20, -20, -18].
+    attack, release : float
+        Attack/release times in seconds, shared across all bands.
+    """
+    if crossover_freqs is None:
+        crossover_freqs = [200.0, 2000.0, 8000.0]
+    n_bands = len(crossover_freqs) + 1
+    if ratios is None:
+        ratios = [2.0] + [3.0] * (n_bands - 2) + [2.0] if n_bands > 2 else [2.0, 2.0]
+    if thresholds is None:
+        thresholds = [-24.0] + [-20.0] * (n_bands - 2) + [-18.0] if n_bands > 2 else [-24.0, -18.0]
+    if len(ratios) != n_bands:
+        raise ValueError(
+            f"ratios length ({len(ratios)}) must be len(crossover_freqs) + 1 ({n_bands})"
+        )
+    if len(thresholds) != n_bands:
+        raise ValueError(
+            f"thresholds length ({len(thresholds)}) must be len(crossover_freqs) + 1 ({n_bands})"
+        )
+
+    # Sort crossover freqs
+    freqs = sorted(crossover_freqs)
+
+    # Split into bands using Linkwitz-Riley (cascaded biquad LP/HP)
+    bands = []
+    remainder = buf
+
+    for i, freq in enumerate(freqs):
+        # Extract low portion
+        band_low = lowpass(remainder, freq)
+        bands.append(band_low)
+        # Remainder is the high portion
+        remainder = highpass(remainder, freq)
+
+    # Last band is whatever remains above the highest crossover
+    bands.append(remainder)
+
+    # Compress each band
+    compressed_bands = []
+    for i, band in enumerate(bands):
+        compressed = compress(
+            band,
+            ratio=ratios[i],
+            threshold=thresholds[i],
+            attack=attack,
+            release=release,
+        )
+        compressed_bands.append(compressed)
+
+    # Recombine
+    out = np.zeros_like(buf.data)
+    for band in compressed_bands:
+        out += band.data
+
+    return AudioBuffer(
+        out.astype(np.float32),
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Vocal chain
+# ---------------------------------------------------------------------------
+
+
+def vocal_chain(
+    buf: AudioBuffer,
+    de_ess: bool = True,
+    de_ess_freq: float = 6000.0,
+    eq: dict | None = None,
+    compress_on: bool = True,
+    limit_on: bool = True,
+    target_lufs: float | None = None,
+) -> AudioBuffer:
+    """Vocal processing chain: de-esser -> EQ -> compress -> limit -> normalize.
+
+    Parameters
+    ----------
+    de_ess : bool
+        Enable de-essing stage.
+    de_ess_freq : float
+        De-esser center frequency in Hz.
+    eq : dict or None
+        EQ settings (same format as :func:`master`). Defaults to a gentle
+        vocal-friendly EQ: highpass at 80 Hz, +2 dB presence at 3 kHz,
+        +1 dB air shelf at 12 kHz.
+    compress_on : bool
+        Enable compression (ratio=4, threshold=-24dB, moderate attack/release).
+    limit_on : bool
+        Enable limiter.
+    target_lufs : float or None
+        If set, normalize to this loudness. Requires signal >= 400ms.
+    """
+    result = buf
+
+    # De-ess
+    if de_ess:
+        result = de_esser(result, freq=de_ess_freq, threshold_db=-20.0, ratio=4.0)
+
+    # Highpass to remove rumble
+    result = highpass(result, 80.0)
+
+    # EQ
+    if eq is not None:
+        # Use the same EQ dict parsing as master()
+        if "low_shelf" in eq:
+            params = eq["low_shelf"]
+            if len(params) == 2:
+                result = low_shelf_db(result, params[0], params[1])
+            else:
+                result = low_shelf_db(result, params[0], params[1], octaves=params[2])
+        if "high_shelf" in eq:
+            params = eq["high_shelf"]
+            if len(params) == 2:
+                result = high_shelf_db(result, params[0], params[1])
+            else:
+                result = high_shelf_db(result, params[0], params[1], octaves=params[2])
+        if "peak" in eq:
+            peak_params = eq["peak"]
+            if isinstance(peak_params[0], (list, tuple)):
+                peaks = peak_params
+            else:
+                peaks = [peak_params]
+            for p in peaks:
+                if len(p) == 2:
+                    result = peak_db(result, p[0], p[1])
+                else:
+                    result = peak_db(result, p[0], p[1], octaves=p[2])
+    else:
+        # Default vocal EQ: presence boost + air
+        result = peak_db(result, 3000.0, 2.0, octaves=1.5)
+        result = high_shelf_db(result, 12000.0, 1.0)
+
+    # Compress
+    if compress_on:
+        result = compress(
+            result, ratio=4.0, threshold=-24.0, attack=0.005, release=0.08
+        )
+
+    # Limit
+    if limit_on:
+        result = limit(result, pre_gain=1.0)
+
+    # Normalize
+    if target_lufs is not None:
+        result = normalize_lufs(result, target_lufs=target_lufs)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# STK instrument helpers
+# ---------------------------------------------------------------------------
+
+# STK submodule aliases
+_stk_inst = _stk.instruments
+_stk_gen = _stk.generators
+_stk_fx = _stk.effects
+
+# Map of instrument names to (class, constructor_style)
+# constructor_style: "freq" = takes lowest_frequency, "void" = no args,
+#                    "freq_required" = lowest_frequency without default
+_STK_INSTRUMENTS: dict[str, tuple[type, str]] = {
+    "clarinet": (_stk_inst.Clarinet, "freq"),
+    "flute": (_stk_inst.Flute, "freq"),
+    "brass": (_stk_inst.Brass, "freq"),
+    "bowed": (_stk_inst.Bowed, "freq"),
+    "plucked": (_stk_inst.Plucked, "freq"),
+    "sitar": (_stk_inst.Sitar, "freq"),
+    "stifkarp": (_stk_inst.StifKarp, "freq"),
+    "saxofony": (_stk_inst.Saxofony, "freq"),
+    "recorder": (_stk_inst.Recorder, "void"),
+    "blowbotl": (_stk_inst.BlowBotl, "void"),
+    "blowhole": (_stk_inst.BlowHole, "freq_required"),
+    "whistle": (_stk_inst.Whistle, "void"),
+}
+
+
+def synth_note(
+    instrument: str,
+    freq: float = 440.0,
+    duration: float = 1.0,
+    velocity: float = 0.8,
+    release: float = 0.1,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Synthesize a single note using an STK physical model.
+
+    Parameters
+    ----------
+    instrument : str
+        Instrument name: 'clarinet', 'flute', 'brass', 'bowed', 'plucked',
+        'sitar', 'stifkarp', 'saxofony', 'recorder', 'blowbotl',
+        'blowhole', 'whistle'.
+    freq : float
+        Note frequency in Hz.
+    duration : float
+        Note duration in seconds (sustain portion before release).
+    velocity : float
+        Note velocity / amplitude (0.0 to 1.0).
+    release : float
+        Release time in seconds after note-off.
+    sample_rate : float
+        Output sample rate.
+    """
+    key = instrument.lower()
+    if key not in _STK_INSTRUMENTS:
+        raise ValueError(
+            f"Unknown instrument {instrument!r}, valid: {list(_STK_INSTRUMENTS.keys())}"
+        )
+    cls, ctor_style = _STK_INSTRUMENTS[key]
+
+    # Set STK global sample rate
+    _stk.set_sample_rate(sample_rate)
+
+    # Construct instrument
+    if ctor_style == "void":
+        inst = cls()
+    elif ctor_style == "freq_required":
+        inst = cls(freq)
+    else:
+        inst = cls()
+
+    # Note on
+    inst.note_on(freq, velocity)
+
+    # Generate sustain portion
+    sustain_frames = max(1, int(sample_rate * duration))
+    sustain_data = np.asarray(inst.process(sustain_frames), dtype=np.float32)
+
+    # Note off
+    inst.note_off(velocity)
+
+    # Generate release portion
+    release_frames = max(1, int(sample_rate * release))
+    release_data = np.asarray(inst.process(release_frames), dtype=np.float32)
+
+    # Concatenate
+    data = np.concatenate([sustain_data, release_data])
+    return AudioBuffer(
+        data.reshape(1, -1),
+        sample_rate=sample_rate,
+        label=instrument,
+    )
+
+
+def synth_sequence(
+    instrument: str,
+    notes: list[tuple[float, float, float]],
+    sample_rate: float = 48000.0,
+    release: float = 0.1,
+    velocity: float = 0.8,
+) -> AudioBuffer:
+    """Synthesize a sequence of notes.
+
+    Parameters
+    ----------
+    instrument : str
+        Instrument name (see :func:`synth_note`).
+    notes : list of (freq_hz, start_time_s, duration_s)
+        Each tuple is (frequency, start_time, duration) in seconds.
+    sample_rate : float
+        Output sample rate.
+    release : float
+        Release time for each note in seconds.
+    velocity : float
+        Default velocity for all notes.
+    """
+    if not notes:
+        raise ValueError("notes list must not be empty")
+
+    # Find total duration
+    total_end = max(start + dur + release for _, start, dur in notes)
+    total_frames = int(sample_rate * total_end) + 1
+
+    out = np.zeros(total_frames, dtype=np.float32)
+
+    for freq, start, dur in notes:
+        note_buf = synth_note(
+            instrument,
+            freq=freq,
+            duration=dur,
+            velocity=velocity,
+            release=release,
+            sample_rate=sample_rate,
+        )
+        start_frame = int(sample_rate * start)
+        end_frame = min(start_frame + note_buf.frames, total_frames)
+        available = end_frame - start_frame
+        out[start_frame:end_frame] += note_buf.data[0, :available]
+
+    return AudioBuffer(
+        out.reshape(1, -1),
+        sample_rate=sample_rate,
+        label=instrument,
+    )
+
+
+def stk_reverb(
+    buf: AudioBuffer,
+    algorithm: str = "freeverb",
+    mix: float = 0.3,
+    room_size: float = 0.5,
+    damping: float = 0.5,
+    t60: float = 1.0,
+) -> AudioBuffer:
+    """Apply an STK reverb algorithm.
+
+    Parameters
+    ----------
+    algorithm : str
+        One of 'freeverb', 'jcrev', 'nrev', 'prcrev'.
+    mix : float
+        Wet/dry mix (0.0 = dry, 1.0 = fully wet).
+    room_size : float
+        Room size (FreeVerb only, 0.0-1.0).
+    damping : float
+        Damping (FreeVerb only, 0.0-1.0).
+    t60 : float
+        Reverberation time in seconds (JCRev, NRev, PRCRev).
+    """
+    _stk.set_sample_rate(buf.sample_rate)
+
+    algo = algorithm.lower()
+    if algo == "freeverb":
+        rv = _stk_fx.FreeVerb()
+        rv.set_room_size(room_size)
+        rv.set_damping(damping)
+        rv.set_effect_mix(mix)
+    elif algo == "jcrev":
+        rv = _stk_fx.JCRev(t60)
+        rv.set_effect_mix(mix)
+    elif algo == "nrev":
+        rv = _stk_fx.NRev(t60)
+        rv.set_effect_mix(mix)
+    elif algo == "prcrev":
+        rv = _stk_fx.PRCRev(t60)
+        rv.set_effect_mix(mix)
+    else:
+        raise ValueError(
+            f"Unknown STK reverb algorithm {algorithm!r}, "
+            "valid: 'freeverb', 'jcrev', 'nrev', 'prcrev'"
+        )
+
+    # Process mono input (sum to mono if stereo)
+    if buf.channels > 1:
+        mono = np.mean(buf.data, axis=0).astype(np.float32)
+    else:
+        mono = buf.data[0].copy()
+    mono = np.ascontiguousarray(mono, dtype=np.float32)
+
+    if algo == "freeverb":
+        # FreeVerb process takes [2, N] and returns [2, N]
+        stereo_in = np.stack([mono, mono])
+        out = np.asarray(rv.process(stereo_in), dtype=np.float32)
+    else:
+        # JCRev, NRev, PRCRev take mono, return [2, N]
+        out = np.asarray(rv.process(mono), dtype=np.float32)
+
+    if out.ndim == 1:
+        out = np.stack([out, out])
+
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+def stk_chorus(
+    buf: AudioBuffer,
+    mod_depth: float = 0.05,
+    mod_freq: float = 0.25,
+    mix: float = 0.5,
+) -> AudioBuffer:
+    """Apply STK Chorus effect.
+
+    Returns stereo output from mono or stereo input.
+    """
+    _stk.set_sample_rate(buf.sample_rate)
+
+    ch = _stk_fx.Chorus()
+    ch.set_mod_depth(mod_depth)
+    ch.set_mod_frequency(mod_freq)
+    ch.set_effect_mix(mix)
+
+    if buf.channels > 1:
+        mono = np.mean(buf.data, axis=0).astype(np.float32)
+    else:
+        mono = buf.data[0].copy()
+    mono = np.ascontiguousarray(mono, dtype=np.float32)
+
+    # STK Chorus.process returns [2, N]
+    out = np.asarray(ch.process(mono), dtype=np.float32)
+    if out.ndim == 1:
+        out = np.stack([out, out])
+
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+def stk_echo(
+    buf: AudioBuffer,
+    delay_ms: float = 250.0,
+    mix: float = 0.5,
+) -> AudioBuffer:
+    """Apply STK Echo effect per channel."""
+    _stk.set_sample_rate(buf.sample_rate)
+    delay_samples = int(buf.sample_rate * delay_ms / 1000.0)
+
+    def _process(x):
+        e = _stk_fx.Echo(delay_samples + 1)
+        e.set_delay(delay_samples)
+        e.set_effect_mix(mix)
+        return e.process(np.ascontiguousarray(x, dtype=np.float32))
+
+    return _process_per_channel(buf, _process)

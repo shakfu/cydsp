@@ -6,4 +6,7 @@ NB_MODULE(_core, m) {
     m.def("greet", [](const std::string& name) { return "Hello, " + name + "!"; }, "Return a greeting string", nb::arg("name"));
     bind_signalsmith(m);
     bind_daisysp(m);
+    bind_stk(m);
+    bind_madronalib(m);
+    bind_hisstools(m);
 }

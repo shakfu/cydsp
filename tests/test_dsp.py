@@ -1740,3 +1740,975 @@ class TestNormalizeLufs:
             normalized = dsp.normalize_lufs(buf, target_lufs=target)
             measured = dsp.loudness_lufs(normalized)
             assert abs(measured - target) < 0.5, f"target={target}, measured={measured}"
+
+
+# ---------------------------------------------------------------------------
+# Normalize peak
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizePeak:
+    def test_peak_matches_target(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.normalize_peak(buf, target_db=-6.0)
+        expected = 10.0 ** (-6.0 / 20.0)
+        actual_peak = np.max(np.abs(result.data))
+        np.testing.assert_allclose(actual_peak, expected, rtol=1e-4)
+
+    def test_0db_target(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.normalize_peak(buf, target_db=0.0)
+        np.testing.assert_allclose(np.max(np.abs(result.data)), 1.0, rtol=1e-4)
+
+    def test_silence_returns_silence(self):
+        buf = AudioBuffer.zeros(1, 1024, sample_rate=48000.0)
+        result = dsp.normalize_peak(buf, target_db=0.0)
+        assert np.max(np.abs(result.data)) == 0.0
+
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=2, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.normalize_peak(buf, target_db=-3.0)
+        assert result.channels == 2
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_metadata_preserved(self):
+        buf = AudioBuffer.noise(
+            channels=1, frames=1024, sample_rate=44100.0, seed=0, label="pk"
+        )
+        result = dsp.normalize_peak(buf)
+        assert result.sample_rate == 44100.0
+        assert result.label == "pk"
+
+
+# ---------------------------------------------------------------------------
+# Trim silence
+# ---------------------------------------------------------------------------
+
+
+class TestTrimSilence:
+    def test_trims_leading_silence(self):
+        data = np.zeros((1, 1000), dtype=np.float32)
+        data[0, 500:] = 0.5
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.trim_silence(buf, threshold_db=-60.0)
+        assert result.frames == 500
+
+    def test_trims_trailing_silence(self):
+        data = np.zeros((1, 1000), dtype=np.float32)
+        data[0, :200] = 0.5
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.trim_silence(buf, threshold_db=-60.0)
+        assert result.frames == 200
+
+    def test_trims_both_ends(self):
+        data = np.zeros((1, 1000), dtype=np.float32)
+        data[0, 300:700] = 0.5
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.trim_silence(buf, threshold_db=-60.0)
+        assert result.frames == 400
+
+    def test_pad_frames(self):
+        data = np.zeros((1, 1000), dtype=np.float32)
+        data[0, 300:700] = 0.5
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.trim_silence(buf, threshold_db=-60.0, pad_frames=10)
+        assert result.frames == 420  # 400 + 2*10
+
+    def test_all_silence_returns_empty(self):
+        buf = AudioBuffer.zeros(1, 1000, sample_rate=48000.0)
+        result = dsp.trim_silence(buf)
+        assert result.frames == 0
+
+    def test_multichannel(self):
+        data = np.zeros((2, 1000), dtype=np.float32)
+        data[0, 200:800] = 0.1
+        data[1, 300:700] = 0.1
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.trim_silence(buf, threshold_db=-60.0)
+        # Should use earliest start / latest end across channels
+        assert result.frames == 600  # 200 to 800
+
+
+# ---------------------------------------------------------------------------
+# Fade in/out
+# ---------------------------------------------------------------------------
+
+
+class TestFades:
+    def test_fade_in_shape(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        result = dsp.fade_in(buf, duration_ms=10.0)
+        assert result.frames == 4800
+        assert result.data.dtype == np.float32
+
+    def test_fade_in_first_sample_zero(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        result = dsp.fade_in(buf, duration_ms=10.0)
+        assert result.data[0, 0] == pytest.approx(0.0, abs=1e-6)
+
+    def test_fade_in_last_sample_unchanged(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        result = dsp.fade_in(buf, duration_ms=10.0)
+        assert result.data[0, -1] == pytest.approx(1.0, abs=1e-6)
+
+    def test_fade_out_last_sample_zero(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        result = dsp.fade_out(buf, duration_ms=10.0)
+        assert result.data[0, -1] == pytest.approx(0.0, abs=1e-6)
+
+    def test_fade_out_first_sample_unchanged(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        result = dsp.fade_out(buf, duration_ms=10.0)
+        assert result.data[0, 0] == pytest.approx(1.0, abs=1e-6)
+
+    def test_fade_curves(self):
+        buf = AudioBuffer.ones(1, 4800, sample_rate=48000.0)
+        for curve in ["linear", "ease_in", "ease_out", "smoothstep"]:
+            result_in = dsp.fade_in(buf, duration_ms=10.0, curve=curve)
+            result_out = dsp.fade_out(buf, duration_ms=10.0, curve=curve)
+            assert result_in.data[0, 0] == pytest.approx(0.0, abs=1e-5), f"fade_in {curve}"
+            assert result_out.data[0, -1] == pytest.approx(0.0, abs=1e-5), f"fade_out {curve}"
+
+    def test_fade_invalid_curve_raises(self):
+        buf = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        with pytest.raises(ValueError, match="Unknown fade curve"):
+            dsp.fade_in(buf, curve="nope")
+
+    def test_fade_multichannel(self):
+        buf = AudioBuffer.ones(2, 4800, sample_rate=48000.0)
+        result = dsp.fade_in(buf, duration_ms=10.0)
+        assert result.channels == 2
+        assert result.data[0, 0] == pytest.approx(0.0, abs=1e-6)
+        assert result.data[1, 0] == pytest.approx(0.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Pan
+# ---------------------------------------------------------------------------
+
+
+class TestPan:
+    def test_mono_to_stereo(self):
+        buf = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.pan(buf, position=0.0)
+        assert result.channels == 2
+
+    def test_center_equal_power(self):
+        buf = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.pan(buf, position=0.0)
+        # At center, both channels should have equal amplitude
+        np.testing.assert_allclose(
+            result.data[0, 0], result.data[1, 0], rtol=1e-5
+        )
+
+    def test_hard_left(self):
+        buf = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.pan(buf, position=-1.0)
+        assert result.data[0, 0] == pytest.approx(1.0, abs=1e-5)
+        assert result.data[1, 0] == pytest.approx(0.0, abs=1e-5)
+
+    def test_hard_right(self):
+        buf = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.pan(buf, position=1.0)
+        assert result.data[0, 0] == pytest.approx(0.0, abs=1e-5)
+        assert result.data[1, 0] == pytest.approx(1.0, abs=1e-5)
+
+    def test_stereo_input(self):
+        buf = AudioBuffer.ones(2, 1024, sample_rate=48000.0)
+        result = dsp.pan(buf, position=-1.0)
+        assert result.channels == 2
+        # Hard left: left gain=1, right gain=0
+        assert result.data[0, 0] == pytest.approx(1.0, abs=1e-5)
+        assert result.data[1, 0] == pytest.approx(0.0, abs=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Mix buffers
+# ---------------------------------------------------------------------------
+
+
+class TestMixBuffers:
+    def test_basic_sum(self):
+        a = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        b = AudioBuffer.ones(1, 1024, sample_rate=48000.0) * 2.0
+        result = dsp.mix_buffers(a, b)
+        np.testing.assert_allclose(result.data[0, 0], 3.0, atol=1e-5)
+
+    def test_with_gains(self):
+        a = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        b = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.mix_buffers(a, b, gains=[0.5, 0.5])
+        np.testing.assert_allclose(result.data[0, 0], 1.0, atol=1e-5)
+
+    def test_different_lengths_zero_padded(self):
+        a = AudioBuffer.ones(1, 512, sample_rate=48000.0)
+        b = AudioBuffer.ones(1, 1024, sample_rate=48000.0)
+        result = dsp.mix_buffers(a, b)
+        assert result.frames == 1024
+        # First 512 samples: sum of both
+        assert result.data[0, 0] == pytest.approx(2.0, abs=1e-5)
+        # After 512: only b contributes
+        assert result.data[0, 600] == pytest.approx(1.0, abs=1e-5)
+
+    def test_sr_mismatch_raises(self):
+        a = AudioBuffer.ones(1, 512, sample_rate=48000.0)
+        b = AudioBuffer.ones(1, 512, sample_rate=44100.0)
+        with pytest.raises(ValueError, match="Sample rate mismatch"):
+            dsp.mix_buffers(a, b)
+
+    def test_gains_length_mismatch_raises(self):
+        a = AudioBuffer.ones(1, 512, sample_rate=48000.0)
+        with pytest.raises(ValueError, match="gains length"):
+            dsp.mix_buffers(a, gains=[1.0, 2.0])
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="At least one"):
+            dsp.mix_buffers()
+
+
+# ---------------------------------------------------------------------------
+# Mid-side processing
+# ---------------------------------------------------------------------------
+
+
+class TestMidSide:
+    def test_encode_decode_roundtrip(self):
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        encoded = dsp.mid_side_encode(buf)
+        decoded = dsp.mid_side_decode(encoded)
+        np.testing.assert_allclose(decoded.data, buf.data, atol=1e-5)
+
+    def test_encode_mono_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="stereo"):
+            dsp.mid_side_encode(buf)
+
+    def test_decode_mono_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="2-channel"):
+            dsp.mid_side_decode(buf)
+
+    def test_mono_signal_has_zero_side(self):
+        """Identical L/R should produce zero side channel."""
+        mono = AudioBuffer.sine(440.0, channels=1, frames=1024, sample_rate=48000.0)
+        stereo = AudioBuffer(
+            np.tile(mono.data, (2, 1)), sample_rate=48000.0
+        )
+        encoded = dsp.mid_side_encode(stereo)
+        np.testing.assert_allclose(encoded.data[1], 0.0, atol=1e-6)
+
+    def test_stereo_widen_identity(self):
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.stereo_widen(buf, width=1.0)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-5)
+
+    def test_stereo_widen_mono(self):
+        """Width 0.0 should produce mono (L == R)."""
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.stereo_widen(buf, width=0.0)
+        np.testing.assert_allclose(result.data[0], result.data[1], atol=1e-5)
+
+    def test_stereo_widen_wider(self):
+        """Width > 1.0 should increase side energy."""
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        narrow = dsp.mid_side_encode(buf)
+        side_energy_orig = np.sum(narrow.data[1] ** 2)
+        result = dsp.stereo_widen(buf, width=2.0)
+        wide = dsp.mid_side_encode(result)
+        side_energy_wide = np.sum(wide.data[1] ** 2)
+        assert side_energy_wide > side_energy_orig * 3.5
+
+    def test_stereo_widen_non_stereo_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="stereo"):
+            dsp.stereo_widen(buf)
+
+
+# ---------------------------------------------------------------------------
+# Saturation
+# ---------------------------------------------------------------------------
+
+
+class TestSaturate:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=2, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.saturate(buf, drive=0.5, mode="soft")
+        assert result.channels == 2
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_drive_zero_near_identity(self):
+        """With drive=0 (gain=1x), soft saturation should be near identity for small signals."""
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=48000.0, seed=0)
+        buf = buf * 0.1  # keep signal very small so tanh(x) ~= x
+        result = dsp.saturate(buf, drive=0.0, mode="soft")
+        np.testing.assert_allclose(result.data, buf.data, atol=0.02)
+
+    def test_hard_clip_bounded(self):
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.saturate(buf, drive=1.0, mode="hard")
+        assert np.max(np.abs(result.data)) <= 1.0 + 1e-6
+
+    def test_all_modes_callable(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        for mode in ["soft", "hard", "tape"]:
+            result = dsp.saturate(buf, drive=0.5, mode=mode)
+            assert result.frames == 1024, f"Failed for mode={mode}"
+
+    def test_invalid_mode_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="Unknown saturation mode"):
+            dsp.saturate(buf, mode="nope")
+
+    def test_soft_preserves_peak(self):
+        """Soft saturation should approximately preserve peak amplitude."""
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.saturate(buf, drive=0.5, mode="soft")
+        peak_in = np.max(np.abs(buf.data))
+        peak_out = np.max(np.abs(result.data))
+        np.testing.assert_allclose(peak_out, peak_in, rtol=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Exciter
+# ---------------------------------------------------------------------------
+
+
+class TestExciter:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.exciter(buf, freq=3000.0, amount=0.3)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_amount_zero_near_identity(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.exciter(buf, amount=0.0)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-6)
+
+    def test_adds_energy_above_freq(self):
+        """Exciter should add harmonic energy in the high-frequency range."""
+        buf = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=0)
+        result = dsp.exciter(buf, freq=3000.0, amount=0.5)
+        # Total energy should increase when adding harmonics
+        energy_in = np.sum(buf.data ** 2)
+        energy_out = np.sum(result.data ** 2)
+        assert energy_out > energy_in
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.exciter(buf, freq=3000.0)
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# De-esser
+# ---------------------------------------------------------------------------
+
+
+class TestDeEsser:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.de_esser(buf, freq=6000.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_reduces_sibilant_energy(self):
+        """De-esser should reduce energy in the sibilant band."""
+        buf = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=0)
+        result = dsp.de_esser(buf, freq=6000.0, threshold_db=-30.0)
+        # Measure energy in sibilant band
+        bp_in = dsp.bandpass(buf, 6000.0, octaves=2.0)
+        bp_out = dsp.bandpass(result, 6000.0, octaves=2.0)
+        energy_in = np.sum(bp_in.data ** 2)
+        energy_out = np.sum(bp_out.data ** 2)
+        assert energy_out < energy_in
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.de_esser(buf)
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# Parallel compression
+# ---------------------------------------------------------------------------
+
+
+class TestParallelCompress:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.parallel_compress(buf, mix=0.5)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_mix_zero_identity(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.parallel_compress(buf, mix=0.0)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-5)
+
+    def test_modifies_signal(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.parallel_compress(buf, mix=0.5)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.parallel_compress(buf, mix=0.5)
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# Reverb
+# ---------------------------------------------------------------------------
+
+
+class TestReverb:
+    def test_mono_to_stereo(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.reverb(buf, preset="hall")
+        assert result.channels == 2
+
+    def test_stereo_to_stereo(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.reverb(buf, preset="room")
+        assert result.channels == 2
+
+    def test_all_presets(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        for preset in ["room", "hall", "plate", "chamber", "cathedral"]:
+            result = dsp.reverb(buf, preset=preset)
+            assert result.channels == 2, f"Failed for preset={preset}"
+            assert result.frames == buf.frames, f"Frame mismatch for preset={preset}"
+
+    def test_invalid_preset_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="Unknown reverb preset"):
+            dsp.reverb(buf, preset="garage")
+
+    def test_mix_zero_dry(self):
+        """mix=0 should return the dry signal."""
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.reverb(buf, mix=0.0, preset="room")
+        # Dry stereo = mono duplicated to both channels
+        np.testing.assert_allclose(result.data[0], buf.data[0], atol=1e-5)
+        np.testing.assert_allclose(result.data[1], buf.data[0], atol=1e-5)
+
+    def test_mix_one_fully_wet(self):
+        """mix=1 should contain no dry signal (different from input)."""
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.reverb(buf, mix=1.0, preset="room")
+        assert not np.allclose(result.data[0], buf.data[0])
+
+    def test_pre_delay(self):
+        """Pre-delay should shift the wet signal onset."""
+        buf = AudioBuffer.impulse(channels=1, frames=8192, sample_rate=48000.0)
+        no_pd = dsp.reverb(buf, mix=1.0, preset="room", pre_delay_ms=0.0)
+        with_pd = dsp.reverb(buf, mix=1.0, preset="room", pre_delay_ms=50.0)
+        # With pre-delay, early samples should have less energy
+        early_no_pd = np.sum(no_pd.data[:, :240] ** 2)
+        early_with_pd = np.sum(with_pd.data[:, :240] ** 2)
+        assert early_with_pd < early_no_pd
+
+    def test_output_frames_match_input(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.reverb(buf, preset="hall", pre_delay_ms=20.0)
+        assert result.frames == buf.frames
+
+
+# ---------------------------------------------------------------------------
+# Mastering chain
+# ---------------------------------------------------------------------------
+
+
+class TestMaster:
+    def test_output_shape(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.master(buf, target_lufs=-14.0)
+        assert result.channels == 1
+        assert result.frames == frames
+
+    def test_loudness_near_target(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.master(buf, target_lufs=-14.0)
+        measured = dsp.loudness_lufs(result)
+        assert abs(measured - (-14.0)) < 2.0
+
+    def test_stereo(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=2, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.master(buf, target_lufs=-14.0)
+        assert result.channels == 2
+
+    def test_dc_block_toggle(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        # Should not raise with dc_block on or off
+        r1 = dsp.master(buf, dc_block_on=True)
+        r2 = dsp.master(buf, dc_block_on=False)
+        assert r1.frames == frames
+        assert r2.frames == frames
+
+    def test_compress_toggle(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        r1 = dsp.master(buf, compress_on=True)
+        r2 = dsp.master(buf, compress_on=False)
+        assert not np.allclose(r1.data, r2.data)
+
+    def test_eq_dict(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.master(
+            buf,
+            eq={
+                "low_shelf": (200.0, -3.0),
+                "high_shelf": (8000.0, 2.0),
+                "peak": (2000.0, 1.5, 1.0),
+            },
+        )
+        assert result.frames == frames
+
+    def test_eq_multi_peak(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.master(
+            buf,
+            eq={
+                "peak": [(1000.0, 2.0), (4000.0, -1.0)],
+            },
+        )
+        assert result.frames == frames
+
+
+# ---------------------------------------------------------------------------
+# Resample
+# ---------------------------------------------------------------------------
+
+
+class TestResample:
+    def test_identity(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.resample(buf, 48000.0)
+        np.testing.assert_array_equal(result.data, buf.data)
+
+    def test_2x_up_output_sr(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.resample(buf, 96000.0)
+        assert result.sample_rate == 96000.0
+        assert result.frames == 2048
+
+    def test_2x_down_output_sr(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.resample(buf, 24000.0)
+        assert result.sample_rate == 24000.0
+        assert result.frames == 512
+
+    def test_arbitrary_ratio(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.resample(buf, 44100.0)
+        assert result.sample_rate == 44100.0
+        expected_frames = round(4096 * 44100.0 / 48000.0)
+        assert result.frames == expected_frames
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        result = dsp.resample(buf, 96000.0)
+        assert result.channels == 2
+        assert result.frames == 2048
+
+    def test_metadata_preserved(self):
+        buf = AudioBuffer.noise(
+            channels=1, frames=1024, sample_rate=48000.0, seed=0, label="rs"
+        )
+        result = dsp.resample(buf, 96000.0)
+        assert result.label == "rs"
+
+
+# ---------------------------------------------------------------------------
+# Noise gate
+# ---------------------------------------------------------------------------
+
+
+class TestNoiseGate:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.noise_gate(buf, threshold_db=-20.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+        assert result.data.dtype == np.float32
+
+    def test_silence_stays_silent(self):
+        buf = AudioBuffer.zeros(1, 4096, sample_rate=48000.0)
+        result = dsp.noise_gate(buf, threshold_db=-60.0)
+        np.testing.assert_array_equal(result.data, 0.0)
+
+    def test_loud_signal_passes(self):
+        """Signal well above threshold should pass through mostly unchanged."""
+        buf = AudioBuffer.sine(440.0, channels=1, frames=4096, sample_rate=48000.0)
+        result = dsp.noise_gate(buf, threshold_db=-60.0)
+        # Most of the signal should survive (after attack settles)
+        energy_ratio = np.sum(result.data ** 2) / np.sum(buf.data ** 2)
+        assert energy_ratio > 0.9
+
+    def test_quiet_signal_gated(self):
+        """Signal below threshold should be heavily attenuated."""
+        buf = AudioBuffer.sine(440.0, channels=1, frames=4096, sample_rate=48000.0)
+        buf = buf * 0.001  # very quiet
+        result = dsp.noise_gate(buf, threshold_db=-20.0)
+        energy_ratio = np.sum(result.data ** 2) / (np.sum(buf.data ** 2) + 1e-20)
+        assert energy_ratio < 0.1
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.noise_gate(buf, threshold_db=-30.0)
+        assert result.channels == 2
+
+    def test_gate_opens_and_closes(self):
+        """Signal that transitions from loud to silent should show gating."""
+        data = np.zeros((1, 4800), dtype=np.float32)
+        t = np.arange(2400, dtype=np.float32) / 48000.0
+        data[0, :2400] = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.noise_gate(buf, threshold_db=-40.0, release=0.01)
+        # Tail should be mostly gated
+        tail_energy = np.sum(result.data[0, 3000:] ** 2)
+        head_energy = np.sum(result.data[0, :2400] ** 2)
+        assert tail_energy < head_energy * 0.01
+
+
+# ---------------------------------------------------------------------------
+# Stereo delay
+# ---------------------------------------------------------------------------
+
+
+class TestStereoDelay:
+    def test_output_stereo(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stereo_delay(buf)
+        assert result.channels == 2
+
+    def test_stereo_input(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stereo_delay(buf)
+        assert result.channels == 2
+        assert result.frames == 4096
+
+    def test_mix_zero_dry(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stereo_delay(buf, mix=0.0)
+        # Dry = mono duplicated to stereo
+        np.testing.assert_allclose(result.data[0], buf.data[0], atol=1e-6)
+        np.testing.assert_allclose(result.data[1], buf.data[0], atol=1e-6)
+
+    def test_delayed_signal_appears(self):
+        """Impulse should produce delayed echo."""
+        buf = AudioBuffer.impulse(channels=1, frames=48000, sample_rate=48000.0)
+        result = dsp.stereo_delay(buf, left_ms=10.0, right_ms=20.0, feedback=0.0, mix=1.0)
+        # Left channel should have a peak around sample 480 (10ms @ 48kHz)
+        left_peak = np.argmax(np.abs(result.data[0]))
+        assert 470 <= left_peak <= 490
+        # Right channel around sample 960 (20ms)
+        right_peak = np.argmax(np.abs(result.data[1]))
+        assert 950 <= right_peak <= 970
+
+    def test_ping_pong(self):
+        """Ping-pong should produce cross-channel echoes."""
+        buf = AudioBuffer.impulse(channels=1, frames=48000, sample_rate=48000.0)
+        result = dsp.stereo_delay(buf, left_ms=10.0, right_ms=10.0,
+                                  feedback=0.5, mix=1.0, ping_pong=True)
+        # Both channels should have significant energy from cross-feeding
+        assert np.max(np.abs(result.data[0])) > 0.1
+        assert np.max(np.abs(result.data[1])) > 0.1
+
+    def test_multichannel_raises(self):
+        buf = AudioBuffer.noise(channels=3, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="mono or stereo"):
+            dsp.stereo_delay(buf)
+
+    def test_feedback_produces_repeats(self):
+        """Feedback > 0 should produce decaying echoes."""
+        buf = AudioBuffer.impulse(channels=1, frames=48000, sample_rate=48000.0)
+        no_fb = dsp.stereo_delay(buf, left_ms=10.0, right_ms=10.0,
+                                 feedback=0.0, mix=1.0)
+        with_fb = dsp.stereo_delay(buf, left_ms=10.0, right_ms=10.0,
+                                   feedback=0.5, mix=1.0)
+        # With feedback should have more total energy
+        assert np.sum(with_fb.data ** 2) > np.sum(no_fb.data ** 2)
+
+
+# ---------------------------------------------------------------------------
+# Multiband compression
+# ---------------------------------------------------------------------------
+
+
+class TestMultibandCompress:
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.multiband_compress(buf)
+        assert result.channels == 1
+        assert result.frames == 4096
+        assert result.data.dtype == np.float32
+
+    def test_modifies_signal(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.multiband_compress(buf)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.multiband_compress(buf)
+        assert result.channels == 2
+
+    def test_custom_crossovers(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.multiband_compress(
+            buf,
+            crossover_freqs=[500.0, 5000.0],
+            ratios=[2.0, 4.0, 2.0],
+            thresholds=[-30.0, -20.0, -15.0],
+        )
+        assert result.frames == 4096
+
+    def test_single_crossover(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.multiband_compress(
+            buf,
+            crossover_freqs=[1000.0],
+            ratios=[2.0, 4.0],
+            thresholds=[-20.0, -20.0],
+        )
+        assert result.frames == 4096
+
+    def test_mismatched_ratios_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="ratios length"):
+            dsp.multiband_compress(buf, crossover_freqs=[1000.0], ratios=[2.0])
+
+    def test_mismatched_thresholds_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="thresholds length"):
+            dsp.multiband_compress(buf, crossover_freqs=[1000.0], thresholds=[-20.0])
+
+
+# ---------------------------------------------------------------------------
+# Vocal chain
+# ---------------------------------------------------------------------------
+
+
+class TestVocalChain:
+    def _voice_like(self, sr=48000.0, seconds=3.0):
+        """Noise shaped like a vocal (energy around 200-4000 Hz)."""
+        frames = int(sr * seconds)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=42)
+        # Bandpass to vocal range
+        buf = dsp.lowpass(buf, 4000.0)
+        buf = dsp.highpass(buf, 200.0)
+        return buf
+
+    def test_shape_preserved(self):
+        buf = self._voice_like()
+        result = dsp.vocal_chain(buf)
+        assert result.channels == 1
+        assert result.frames == buf.frames
+
+    def test_modifies_signal(self):
+        buf = self._voice_like()
+        result = dsp.vocal_chain(buf)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_with_target_lufs(self):
+        buf = self._voice_like()
+        result = dsp.vocal_chain(buf, target_lufs=-16.0)
+        measured = dsp.loudness_lufs(result)
+        assert abs(measured - (-16.0)) < 2.0
+
+    def test_de_ess_toggle(self):
+        buf = self._voice_like()
+        r1 = dsp.vocal_chain(buf, de_ess=True)
+        r2 = dsp.vocal_chain(buf, de_ess=False)
+        assert not np.allclose(r1.data, r2.data)
+
+    def test_compress_toggle(self):
+        buf = self._voice_like()
+        r1 = dsp.vocal_chain(buf, compress_on=True, target_lufs=None)
+        r2 = dsp.vocal_chain(buf, compress_on=False, target_lufs=None)
+        assert not np.allclose(r1.data, r2.data)
+
+    def test_custom_eq(self):
+        buf = self._voice_like()
+        result = dsp.vocal_chain(
+            buf,
+            eq={"peak": (2000.0, 3.0), "high_shelf": (10000.0, 2.0)},
+            target_lufs=None,
+        )
+        assert result.frames == buf.frames
+
+    def test_multichannel(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=2, frames=frames, sample_rate=sr, seed=0)
+        result = dsp.vocal_chain(buf, target_lufs=None)
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# STK synth_note
+# ---------------------------------------------------------------------------
+
+
+class TestSynthNote:
+    def test_basic_note(self):
+        result = dsp.synth_note("clarinet", freq=440.0, duration=0.5)
+        assert result.channels == 1
+        expected_frames = int(48000 * 0.5) + int(48000 * 0.1)
+        assert result.frames == expected_frames
+        assert result.sample_rate == 48000.0
+
+    def test_nonzero_output(self):
+        result = dsp.synth_note("clarinet", freq=440.0, duration=0.5, velocity=0.8)
+        assert np.max(np.abs(result.data)) > 0.001
+
+    def test_all_instruments(self):
+        for name in [
+            "clarinet", "flute", "brass", "bowed", "plucked",
+            "sitar", "stifkarp", "saxofony", "recorder",
+            "blowbotl", "blowhole", "whistle",
+        ]:
+            result = dsp.synth_note(name, freq=440.0, duration=0.2, release=0.05)
+            assert result.channels == 1, f"{name} wrong channels"
+            assert result.frames > 0, f"{name} no frames"
+
+    def test_invalid_instrument_raises(self):
+        with pytest.raises(ValueError, match="Unknown instrument"):
+            dsp.synth_note("kazoo")
+
+    def test_custom_sample_rate(self):
+        result = dsp.synth_note("plucked", freq=440.0, duration=0.5, sample_rate=44100.0)
+        assert result.sample_rate == 44100.0
+        expected_frames = int(44100 * 0.5) + int(44100 * 0.1)
+        assert result.frames == expected_frames
+
+    def test_label_set(self):
+        result = dsp.synth_note("flute", freq=440.0, duration=0.2)
+        assert result.label == "flute"
+
+    def test_different_frequencies(self):
+        low = dsp.synth_note("clarinet", freq=220.0, duration=0.5)
+        high = dsp.synth_note("clarinet", freq=880.0, duration=0.5)
+        # They should produce different waveforms
+        assert not np.allclose(low.data[:, :low.frames], high.data[:, :high.frames])
+
+
+# ---------------------------------------------------------------------------
+# STK synth_sequence
+# ---------------------------------------------------------------------------
+
+
+class TestSynthSequence:
+    def test_basic_sequence(self):
+        notes = [
+            (440.0, 0.0, 0.3),
+            (550.0, 0.4, 0.3),
+            (660.0, 0.8, 0.3),
+        ]
+        result = dsp.synth_sequence("plucked", notes)
+        assert result.channels == 1
+        # Should be long enough for all notes + release
+        total_end = max(s + d + 0.1 for _, s, d in notes)
+        assert result.frames >= int(48000 * total_end)
+
+    def test_empty_notes_raises(self):
+        with pytest.raises(ValueError, match="notes list must not be empty"):
+            dsp.synth_sequence("clarinet", [])
+
+    def test_overlapping_notes(self):
+        """Overlapping notes should sum together."""
+        notes = [
+            (440.0, 0.0, 0.5),
+            (660.0, 0.0, 0.5),
+        ]
+        result = dsp.synth_sequence("plucked", notes)
+        assert result.channels == 1
+        # Peak should be higher than single note due to overlap
+        single = dsp.synth_note("plucked", freq=440.0, duration=0.5)
+        assert np.max(np.abs(result.data)) >= np.max(np.abs(single.data)) * 0.5
+
+    def test_label(self):
+        notes = [(440.0, 0.0, 0.2)]
+        result = dsp.synth_sequence("sitar", notes)
+        assert result.label == "sitar"
+
+
+# ---------------------------------------------------------------------------
+# STK reverb
+# ---------------------------------------------------------------------------
+
+
+class TestStkReverb:
+    def test_freeverb_stereo_output(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_reverb(buf, algorithm="freeverb")
+        assert result.channels == 2
+        assert result.frames == 4096
+
+    def test_all_algorithms(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        for algo in ["freeverb", "jcrev", "nrev", "prcrev"]:
+            result = dsp.stk_reverb(buf, algorithm=algo)
+            assert result.channels == 2, f"{algo} wrong channels"
+            assert result.frames == buf.frames, f"{algo} wrong frames"
+
+    def test_invalid_algorithm_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="Unknown STK reverb"):
+            dsp.stk_reverb(buf, algorithm="unknown")
+
+    def test_stereo_input(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_reverb(buf, algorithm="nrev")
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# STK chorus and echo
+# ---------------------------------------------------------------------------
+
+
+class TestStkEffects:
+    def test_chorus_stereo_output(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_chorus(buf)
+        assert result.channels == 2
+        assert result.frames == 4096
+
+    def test_chorus_modifies_signal(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_chorus(buf)
+        assert not np.allclose(result.data[0], buf.data[0])
+
+    def test_echo_shape(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_echo(buf, delay_ms=50.0, mix=0.5)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_echo_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_echo(buf, delay_ms=50.0)
+        assert result.channels == 2
+
+    def test_echo_modifies_signal(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.stk_echo(buf, delay_ms=100.0, mix=0.5)
+        assert not np.allclose(result.data, buf.data)
