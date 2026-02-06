@@ -1,3 +1,5 @@
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -48,8 +50,12 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
-.pytest_cache/
 cover/
+
+# general cache
+.cache
+.*_cache
+.*-cache
 
 # Translations
 *.mo
@@ -63,7 +69,6 @@ db.sqlite3-journal
 
 # Flask stuff:
 instance/
-.webassets-cache
 
 # Scrapy stuff:
 .scrapy
@@ -155,7 +160,6 @@ venv.bak/
 /site
 
 # mypy
-.mypy_cache/
 .dmypy.json
 dmypy.json
 
@@ -188,9 +192,6 @@ cython_debug/
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
-# Ruff stuff:
-.ruff_cache/
-
 # PyPI configuration file
 .pypirc
 
@@ -205,3 +206,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# agents
+.claude
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+

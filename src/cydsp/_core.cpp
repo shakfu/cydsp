@@ -1,0 +1,8 @@
+#include "_core_common.h"
+
+NB_MODULE(_core, m) {
+    m.doc() = "cydsp: Python bindings for DSP libraries via nanobind";
+    m.def("add", [](int a, int b) { return a + b; }, "Add two integers", nb::arg("a"), nb::arg("b"));
+    m.def("greet", [](const std::string& name) { return "Hello, " + name + "!"; }, "Return a greeting string", nb::arg("name"));
+    bind_signalsmith(m);
+}
