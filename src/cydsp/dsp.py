@@ -11,6 +11,7 @@ import numpy as np
 
 from cydsp.buffer import AudioBuffer
 from cydsp._core import filters, fft, delay as _delay, envelopes, rates, mix
+from cydsp._core import daisysp as _daisysp
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +46,63 @@ def _process_per_channel(buf: AudioBuffer, process_fn) -> AudioBuffer:
 
 
 # ---------------------------------------------------------------------------
-# Filter functions
+# DaisySP submodule aliases
+# ---------------------------------------------------------------------------
+
+_dsy_osc = _daisysp.oscillators
+_dsy_filt = _daisysp.filters
+_dsy_fx = _daisysp.effects
+_dsy_dyn = _daisysp.dynamics
+_dsy_noise = _daisysp.noise
+_dsy_drums = _daisysp.drums
+_dsy_pm = _daisysp.physical_modeling
+_dsy_util = _daisysp.utility
+
+_WAVEFORM_MAP: dict[str, int] = {
+    "sine": _dsy_osc.WAVE_SIN,
+    "sin": _dsy_osc.WAVE_SIN,
+    "tri": _dsy_osc.WAVE_TRI,
+    "triangle": _dsy_osc.WAVE_TRI,
+    "saw": _dsy_osc.WAVE_SAW,
+    "ramp": _dsy_osc.WAVE_RAMP,
+    "square": _dsy_osc.WAVE_SQUARE,
+    "polyblep_tri": _dsy_osc.WAVE_POLYBLEP_TRI,
+    "polyblep_saw": _dsy_osc.WAVE_POLYBLEP_SAW,
+    "polyblep_square": _dsy_osc.WAVE_POLYBLEP_SQUARE,
+}
+
+_BLOSC_WAVEFORM_MAP: dict[str, int] = {
+    "triangle": _dsy_osc.BLOSC_WAVE_TRIANGLE,
+    "tri": _dsy_osc.BLOSC_WAVE_TRIANGLE,
+    "saw": _dsy_osc.BLOSC_WAVE_SAW,
+    "square": _dsy_osc.BLOSC_WAVE_SQUARE,
+    "off": _dsy_osc.BLOSC_WAVE_OFF,
+}
+
+_LADDER_MODE_MAP: dict[str, int] = {
+    "lp24": _dsy_filt.LadderFilterMode.LP24,
+    "lp12": _dsy_filt.LadderFilterMode.LP12,
+    "bp24": _dsy_filt.LadderFilterMode.BP24,
+    "bp12": _dsy_filt.LadderFilterMode.BP12,
+    "hp24": _dsy_filt.LadderFilterMode.HP24,
+    "hp12": _dsy_filt.LadderFilterMode.HP12,
+}
+
+
+def _resolve_waveform(waveform: int | str, mapping: dict[str, int]) -> int:
+    """Resolve a waveform name or int constant to an int."""
+    if isinstance(waveform, int):
+        return waveform
+    key = waveform.lower()
+    if key not in mapping:
+        raise ValueError(
+            f"Unknown waveform {waveform!r}, valid names: {list(mapping.keys())}"
+        )
+    return mapping[key]
+
+
+# ---------------------------------------------------------------------------
+# Filter functions (signalsmith)
 # ---------------------------------------------------------------------------
 
 
@@ -726,4 +783,885 @@ def lfo(
         osc = envelopes.CubicLfo()
     osc.set(low, high, rate, rate_variation, depth_variation)
     data = osc.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Effects
+# ---------------------------------------------------------------------------
+
+
+def autowah(
+    buf: AudioBuffer,
+    wah: float = 0.5,
+    dry_wet: float = 1.0,
+    level: float = 0.5,
+) -> AudioBuffer:
+    """Apply auto-wah effect per channel."""
+
+    def _process(x):
+        aw = _dsy_fx.Autowah()
+        aw.init(buf.sample_rate)
+        aw.set_wah(wah)
+        aw.set_dry_wet(dry_wet)
+        aw.set_level(level)
+        return aw.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def chorus(
+    buf: AudioBuffer,
+    lfo_freq: float = 0.3,
+    lfo_depth: float = 0.5,
+    delay_ms: float = 5.0,
+    feedback: float = 0.2,
+) -> AudioBuffer:
+    """Apply chorus effect.
+
+    Mono input produces stereo output via process_stereo.
+    Multi-channel input is processed per-channel (mono chorus).
+    """
+    if buf.channels == 1:
+        ch = _dsy_fx.Chorus()
+        ch.init(buf.sample_rate)
+        ch.set_lfo_freq(lfo_freq)
+        ch.set_lfo_depth(lfo_depth)
+        ch.set_delay_ms(delay_ms)
+        ch.set_feedback(feedback)
+        stereo = ch.process_stereo(buf.ensure_1d(0))
+        return AudioBuffer(
+            stereo,
+            sample_rate=buf.sample_rate,
+            channel_layout="stereo",
+            label=buf.label,
+        )
+
+    def _process(x):
+        ch = _dsy_fx.Chorus()
+        ch.init(buf.sample_rate)
+        ch.set_lfo_freq(lfo_freq)
+        ch.set_lfo_depth(lfo_depth)
+        ch.set_delay_ms(delay_ms)
+        ch.set_feedback(feedback)
+        return ch.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def decimator(
+    buf: AudioBuffer,
+    downsample_factor: float = 0.5,
+    bitcrush_factor: float = 0.5,
+    bits_to_crush: int = 8,
+    smooth: bool = False,
+) -> AudioBuffer:
+    """Apply decimator (bitcrushing / downsampling) per channel."""
+
+    def _process(x):
+        d = _dsy_fx.Decimator()
+        d.init()
+        d.set_downsample_factor(downsample_factor)
+        d.set_bitcrush_factor(bitcrush_factor)
+        d.set_bits_to_crush(bits_to_crush)
+        d.set_smooth_crushing(smooth)
+        return d.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def flanger(
+    buf: AudioBuffer,
+    lfo_freq: float = 0.2,
+    lfo_depth: float = 0.5,
+    feedback: float = 0.3,
+    delay_ms: float = 1.0,
+) -> AudioBuffer:
+    """Apply flanger effect per channel."""
+
+    def _process(x):
+        f = _dsy_fx.Flanger()
+        f.init(buf.sample_rate)
+        f.set_lfo_freq(lfo_freq)
+        f.set_lfo_depth(lfo_depth)
+        f.set_feedback(feedback)
+        f.set_delay_ms(delay_ms)
+        return f.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def overdrive(buf: AudioBuffer, drive: float = 0.5) -> AudioBuffer:
+    """Apply overdrive distortion per channel."""
+
+    def _process(x):
+        od = _dsy_fx.Overdrive()
+        od.init()
+        od.set_drive(drive)
+        return od.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def phaser(
+    buf: AudioBuffer,
+    lfo_freq: float = 0.3,
+    lfo_depth: float = 0.5,
+    freq: float = 1000.0,
+    feedback: float = 0.5,
+    poles: int = 4,
+) -> AudioBuffer:
+    """Apply phaser effect per channel."""
+
+    def _process(x):
+        p = _dsy_fx.Phaser()
+        p.init(buf.sample_rate)
+        p.set_lfo_freq(lfo_freq)
+        p.set_lfo_depth(lfo_depth)
+        p.set_freq(freq)
+        p.set_feedback(feedback)
+        p.set_poles(poles)
+        return p.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def pitch_shift(
+    buf: AudioBuffer,
+    semitones: float = 0.0,
+    del_size: int = 256,
+    fun: float = 0.0,
+) -> AudioBuffer:
+    """Apply pitch shifting per channel."""
+
+    def _process(x):
+        ps = _dsy_fx.PitchShifter()
+        ps.init(buf.sample_rate)
+        ps.set_transposition(semitones)
+        ps.set_del_size(del_size)
+        ps.set_fun(fun)
+        return ps.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def sample_rate_reduce(buf: AudioBuffer, freq: float = 0.5) -> AudioBuffer:
+    """Apply sample-rate reduction per channel.
+
+    Parameters
+    ----------
+    freq : float
+        Normalized frequency 0-1 controlling the reduction amount.
+    """
+
+    def _process(x):
+        srr = _dsy_fx.SampleRateReducer()
+        srr.init()
+        srr.set_freq(freq)
+        return srr.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def tremolo(
+    buf: AudioBuffer,
+    freq: float = 5.0,
+    depth: float = 0.5,
+    waveform: int = 0,
+) -> AudioBuffer:
+    """Apply tremolo effect per channel."""
+
+    def _process(x):
+        t = _dsy_fx.Tremolo()
+        t.init(buf.sample_rate)
+        t.set_freq(freq)
+        t.set_depth(depth)
+        t.set_waveform(waveform)
+        return t.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def wavefold(
+    buf: AudioBuffer,
+    gain: float = 1.0,
+    offset: float = 0.0,
+) -> AudioBuffer:
+    """Apply wavefolding per channel."""
+
+    def _process(x):
+        wf = _dsy_fx.Wavefolder()
+        wf.init()
+        wf.set_gain(gain)
+        wf.set_offset(offset)
+        return wf.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def bitcrush(
+    buf: AudioBuffer,
+    bit_depth: int = 8,
+    crush_rate: float | None = None,
+) -> AudioBuffer:
+    """Apply bitcrushing per channel.
+
+    Parameters
+    ----------
+    crush_rate : float or None
+        Sample-and-hold rate. Defaults to sample_rate / 4 if None.
+    """
+    rate = crush_rate if crush_rate is not None else buf.sample_rate / 4.0
+
+    def _process(x):
+        bc = _dsy_fx.Bitcrush()
+        bc.init(buf.sample_rate)
+        bc.set_bit_depth(bit_depth)
+        bc.set_crush_rate(rate)
+        return bc.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def fold(buf: AudioBuffer, increment: float = 1.0) -> AudioBuffer:
+    """Apply fold distortion per channel."""
+
+    def _process(x):
+        f = _dsy_fx.Fold()
+        f.init()
+        f.set_increment(increment)
+        return f.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def reverb_sc(
+    buf: AudioBuffer,
+    feedback: float = 0.7,
+    lp_freq: float = 10000.0,
+) -> AudioBuffer:
+    """Apply ReverbSc stereo reverb.
+
+    Mono input is duplicated to stereo. Stereo input is passed through.
+    3+ channels raises ValueError.
+    """
+    if buf.channels > 2:
+        raise ValueError(
+            f"reverb_sc requires mono or stereo input, got {buf.channels} channels"
+        )
+    rv = _dsy_fx.ReverbSc()
+    rv.init(buf.sample_rate)
+    rv.set_feedback(feedback)
+    rv.set_lp_freq(lp_freq)
+    if buf.channels == 1:
+        stereo_in = np.vstack([buf.data[0], buf.data[0]])
+    else:
+        stereo_in = buf.data
+    out = rv.process(stereo_in)
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout="stereo",
+        label=buf.label,
+    )
+
+
+def dc_block(buf: AudioBuffer) -> AudioBuffer:
+    """Remove DC offset per channel using DaisySP DcBlock."""
+
+    def _process(x):
+        dc = _dsy_util.DcBlock()
+        dc.init(buf.sample_rate)
+        return dc.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Filters
+# ---------------------------------------------------------------------------
+
+
+def _make_svf(buf, freq_hz, resonance, drive, process_method):
+    """Internal helper for SVF filter variants."""
+
+    def _process(x):
+        svf = _dsy_filt.Svf()
+        svf.init(buf.sample_rate)
+        svf.set_freq(freq_hz)
+        svf.set_res(resonance)
+        svf.set_drive(drive)
+        return getattr(svf, process_method)(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def svf_lowpass(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """State-variable filter lowpass."""
+    return _make_svf(buf, freq_hz, resonance, drive, "process_low")
+
+
+def svf_highpass(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """State-variable filter highpass."""
+    return _make_svf(buf, freq_hz, resonance, drive, "process_high")
+
+
+def svf_bandpass(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """State-variable filter bandpass."""
+    return _make_svf(buf, freq_hz, resonance, drive, "process_band")
+
+
+def svf_notch(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """State-variable filter notch."""
+    return _make_svf(buf, freq_hz, resonance, drive, "process_notch")
+
+
+def svf_peak(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """State-variable filter peak."""
+    return _make_svf(buf, freq_hz, resonance, drive, "process_peak")
+
+
+def ladder_filter(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+    mode: str = "lp24",
+    drive: float = 0.0,
+) -> AudioBuffer:
+    """Ladder filter with selectable mode.
+
+    Parameters
+    ----------
+    mode : str
+        One of "lp24", "lp12", "bp24", "bp12", "hp24", "hp12".
+    """
+    mode_key = mode.lower()
+    if mode_key not in _LADDER_MODE_MAP:
+        raise ValueError(
+            f"Unknown ladder mode {mode!r}, valid: {list(_LADDER_MODE_MAP.keys())}"
+        )
+    mode_val = _LADDER_MODE_MAP[mode_key]
+
+    def _process(x):
+        lf = _dsy_filt.LadderFilter()
+        lf.init(buf.sample_rate)
+        lf.set_freq(freq_hz)
+        lf.set_res(resonance)
+        lf.set_filter_mode(mode_val)
+        lf.set_input_drive(drive)
+        return lf.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def moog_ladder(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    resonance: float = 0.0,
+) -> AudioBuffer:
+    """Moog-style ladder lowpass filter."""
+
+    def _process(x):
+        ml = _dsy_filt.MoogLadder()
+        ml.init(buf.sample_rate)
+        ml.set_freq(freq_hz)
+        ml.set_res(resonance)
+        return ml.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def tone_lowpass(buf: AudioBuffer, freq_hz: float = 1000.0) -> AudioBuffer:
+    """One-pole lowpass filter (Tone)."""
+
+    def _process(x):
+        t = _dsy_filt.Tone()
+        t.init(buf.sample_rate)
+        t.set_freq(freq_hz)
+        return t.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def tone_highpass(buf: AudioBuffer, freq_hz: float = 1000.0) -> AudioBuffer:
+    """One-pole highpass filter (ATone)."""
+
+    def _process(x):
+        at = _dsy_filt.ATone()
+        at.init(buf.sample_rate)
+        at.set_freq(freq_hz)
+        return at.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def modal_bandpass(
+    buf: AudioBuffer,
+    freq_hz: float = 1000.0,
+    q: float = 500.0,
+) -> AudioBuffer:
+    """Modal resonator bandpass filter."""
+
+    def _process(x):
+        m = _dsy_filt.Mode()
+        m.init(buf.sample_rate)
+        m.set_freq(freq_hz)
+        m.set_q(q)
+        return m.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def comb_filter(
+    buf: AudioBuffer,
+    freq_hz: float = 500.0,
+    rev_time: float = 0.5,
+    max_size: int = 4096,
+) -> AudioBuffer:
+    """Comb filter."""
+
+    def _process(x):
+        c = _dsy_filt.Comb(buf.sample_rate, max_size)
+        c.set_freq(freq_hz)
+        c.set_rev_time(rev_time)
+        return c.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Dynamics
+# ---------------------------------------------------------------------------
+
+
+def compress(
+    buf: AudioBuffer,
+    ratio: float = 4.0,
+    threshold: float = -20.0,
+    attack: float = 0.01,
+    release: float = 0.1,
+    makeup: float = 0.0,
+    auto_makeup: bool = False,
+) -> AudioBuffer:
+    """Apply compression per channel."""
+
+    def _process(x):
+        c = _dsy_dyn.Compressor()
+        c.init(buf.sample_rate)
+        c.set_ratio(ratio)
+        c.set_threshold(threshold)
+        c.set_attack(attack)
+        c.set_release(release)
+        c.set_makeup(makeup)
+        c.auto_makeup(auto_makeup)
+        return c.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def limit(buf: AudioBuffer, pre_gain: float = 1.0) -> AudioBuffer:
+    """Apply limiter per channel."""
+
+    def _process(x):
+        lm = _dsy_dyn.Limiter()
+        lm.init()
+        return lm.process(x, pre_gain)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Oscillators
+# ---------------------------------------------------------------------------
+
+
+def oscillator(
+    frames: int,
+    freq: float = 440.0,
+    amp: float = 1.0,
+    waveform: int | str = "sine",
+    pw: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a waveform using DaisySP Oscillator.
+
+    Parameters
+    ----------
+    waveform : int or str
+        Waveform constant or name: "sine", "tri", "saw", "ramp", "square",
+        "polyblep_tri", "polyblep_saw", "polyblep_square".
+    """
+    wf = _resolve_waveform(waveform, _WAVEFORM_MAP)
+    osc = _dsy_osc.Oscillator()
+    osc.init(sample_rate)
+    osc.set_freq(freq)
+    osc.set_amp(amp)
+    osc.set_waveform(wf)
+    osc.set_pw(pw)
+    data = osc.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def fm2(
+    frames: int,
+    freq: float = 440.0,
+    ratio: float = 2.0,
+    index: float = 1.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate 2-operator FM synthesis."""
+    fm = _dsy_osc.Fm2()
+    fm.init(sample_rate)
+    fm.set_frequency(freq)
+    fm.set_ratio(ratio)
+    fm.set_index(index)
+    data = fm.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def formant_oscillator(
+    frames: int,
+    carrier_freq: float = 440.0,
+    formant_freq: float = 1000.0,
+    phase_shift: float = 0.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate formant oscillator signal."""
+    fo = _dsy_osc.FormantOscillator()
+    fo.init(sample_rate)
+    fo.set_carrier_freq(carrier_freq)
+    fo.set_formant_freq(formant_freq)
+    fo.set_phase_shift(phase_shift)
+    data = fo.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def bl_oscillator(
+    frames: int,
+    freq: float = 440.0,
+    amp: float = 1.0,
+    waveform: int | str = "saw",
+    pw: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a band-limited waveform using DaisySP BlOsc.
+
+    Parameters
+    ----------
+    waveform : int or str
+        Waveform constant or name: "triangle"/"tri", "saw", "square", "off".
+    """
+    wf = _resolve_waveform(waveform, _BLOSC_WAVEFORM_MAP)
+    osc = _dsy_osc.BlOsc()
+    osc.init(sample_rate)
+    osc.set_freq(freq)
+    osc.set_amp(amp)
+    osc.set_waveform(wf)
+    osc.set_pw(pw)
+    data = osc.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Noise
+# ---------------------------------------------------------------------------
+
+
+def white_noise(
+    frames: int,
+    amp: float = 1.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate white noise."""
+    wn = _dsy_noise.WhiteNoise()
+    wn.init()
+    wn.set_amp(amp)
+    data = wn.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def clocked_noise(
+    frames: int,
+    freq: float = 1000.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate clocked (sample-and-hold) noise."""
+    cn = _dsy_noise.ClockedNoise()
+    cn.init(sample_rate)
+    cn.set_freq(freq)
+    data = cn.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def dust(
+    frames: int,
+    density: float = 1.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate Dust (random impulses at given density)."""
+    d = _dsy_noise.Dust()
+    d.init()
+    d.set_density(density)
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Drums
+# ---------------------------------------------------------------------------
+
+
+def analog_bass_drum(
+    frames: int,
+    freq: float = 60.0,
+    tone: float = 0.5,
+    decay: float = 0.5,
+    accent: float = 0.5,
+    sustain: bool = False,
+    attack_fm: float = 0.5,
+    self_fm: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate an analog bass drum hit (triggered at sample 0)."""
+    d = _dsy_drums.AnalogBassDrum()
+    d.init(sample_rate)
+    d.set_freq(freq)
+    d.set_tone(tone)
+    d.set_decay(decay)
+    d.set_accent(accent)
+    d.set_sustain(sustain)
+    d.set_attack_fm_amount(attack_fm)
+    d.set_self_fm_amount(self_fm)
+    d.trig()
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def analog_snare_drum(
+    frames: int,
+    freq: float = 200.0,
+    tone: float = 0.5,
+    decay: float = 0.5,
+    snappy: float = 0.5,
+    accent: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate an analog snare drum hit (triggered at sample 0)."""
+    d = _dsy_drums.AnalogSnareDrum()
+    d.init(sample_rate)
+    d.set_freq(freq)
+    d.set_tone(tone)
+    d.set_decay(decay)
+    d.set_snappy(snappy)
+    d.set_accent(accent)
+    d.set_sustain(sustain)
+    d.trig()
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def hihat(
+    frames: int,
+    freq: float = 3000.0,
+    tone: float = 0.5,
+    decay: float = 0.3,
+    noisiness: float = 0.8,
+    accent: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a hi-hat hit (triggered at sample 0)."""
+    d = _dsy_drums.HiHat()
+    d.init(sample_rate)
+    d.set_freq(freq)
+    d.set_tone(tone)
+    d.set_decay(decay)
+    d.set_noisiness(noisiness)
+    d.set_accent(accent)
+    d.set_sustain(sustain)
+    d.trig()
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def synthetic_bass_drum(
+    frames: int,
+    freq: float = 60.0,
+    tone: float = 0.5,
+    decay: float = 0.5,
+    dirtiness: float = 0.3,
+    fm_env_amount: float = 0.5,
+    fm_env_decay: float = 0.3,
+    accent: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a synthetic bass drum hit (triggered at sample 0)."""
+    d = _dsy_drums.SyntheticBassDrum()
+    d.init(sample_rate)
+    d.set_freq(freq)
+    d.set_tone(tone)
+    d.set_decay(decay)
+    d.set_dirtiness(dirtiness)
+    d.set_fm_envelope_amount(fm_env_amount)
+    d.set_fm_envelope_decay(fm_env_decay)
+    d.set_accent(accent)
+    d.set_sustain(sustain)
+    d.trig()
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def synthetic_snare_drum(
+    frames: int,
+    freq: float = 200.0,
+    decay: float = 0.5,
+    snappy: float = 0.5,
+    fm_amount: float = 0.3,
+    accent: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a synthetic snare drum hit (triggered at sample 0)."""
+    d = _dsy_drums.SyntheticSnareDrum()
+    d.init(sample_rate)
+    d.set_freq(freq)
+    d.set_decay(decay)
+    d.set_snappy(snappy)
+    d.set_fm_amount(fm_amount)
+    d.set_accent(accent)
+    d.set_sustain(sustain)
+    d.trig()
+    data = d.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Physical Modeling
+# ---------------------------------------------------------------------------
+
+
+def karplus_strong(
+    buf: AudioBuffer,
+    freq_hz: float = 440.0,
+    brightness: float = 0.5,
+    damping: float = 0.5,
+    non_linearity: float = 0.0,
+) -> AudioBuffer:
+    """Karplus-Strong string model (excitation input, per channel)."""
+
+    def _process(x):
+        s = _dsy_pm.String()
+        s.init(buf.sample_rate)
+        s.set_freq(freq_hz)
+        s.set_brightness(brightness)
+        s.set_damping(damping)
+        s.set_non_linearity(non_linearity)
+        return s.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def modal_voice(
+    frames: int,
+    freq: float = 440.0,
+    accent: float = 0.5,
+    structure: float = 0.5,
+    brightness: float = 0.5,
+    damping: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a modal voice hit (triggered at sample 0)."""
+    mv = _dsy_pm.ModalVoice()
+    mv.init(sample_rate)
+    mv.set_freq(freq)
+    mv.set_accent(accent)
+    mv.set_structure(structure)
+    mv.set_brightness(brightness)
+    mv.set_damping(damping)
+    mv.set_sustain(sustain)
+    mv.trig()
+    data = mv.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def string_voice(
+    frames: int,
+    freq: float = 440.0,
+    accent: float = 0.5,
+    structure: float = 0.5,
+    brightness: float = 0.5,
+    damping: float = 0.5,
+    sustain: bool = False,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a string voice hit (triggered at sample 0)."""
+    sv = _dsy_pm.StringVoice()
+    sv.init(sample_rate)
+    sv.set_freq(freq)
+    sv.set_accent(accent)
+    sv.set_structure(structure)
+    sv.set_brightness(brightness)
+    sv.set_damping(damping)
+    sv.set_sustain(sustain)
+    sv.trig()
+    data = sv.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def pluck(
+    frames: int,
+    freq: float = 440.0,
+    amp: float = 0.8,
+    decay: float = 0.95,
+    damp: float = 0.9,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a plucked string sound (triggered at sample 0)."""
+    npt = max(256, int(sample_rate / freq) + 1)
+    p = _dsy_pm.Pluck(sample_rate, npt)
+    p.set_freq(freq)
+    p.set_amp(amp)
+    p.set_decay(decay)
+    p.set_damp(damp)
+    data = p.process(frames)
+    return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)
+
+
+def drip(
+    frames: int,
+    dettack: float = 0.01,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a water-drip sound (triggered at sample 0)."""
+    d = _dsy_pm.Drip()
+    d.init(sample_rate, dettack)
+    data = d.process(frames)
     return AudioBuffer(np.asarray(data).reshape(1, -1), sample_rate=sample_rate)

@@ -43,3 +43,4 @@ inline NpCF1 make_cf1(std::complex<float> *data, size_t n) {
 
 // Library binding entry points
 void bind_signalsmith(nb::module_ &m);
+void bind_daisysp(nb::module_ &m);

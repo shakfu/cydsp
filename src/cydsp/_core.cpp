@@ -5,4 +5,5 @@ NB_MODULE(_core, m) {
     m.def("add", [](int a, int b) { return a + b; }, "Add two integers", nb::arg("a"), nb::arg("b"));
     m.def("greet", [](const std::string& name) { return "Hello, " + name + "!"; }, "Return a greeting string", nb::arg("name"));
     bind_signalsmith(m);
+    bind_daisysp(m);
 }

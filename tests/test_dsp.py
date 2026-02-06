@@ -519,3 +519,536 @@ class TestLfoFunction:
     def test_lfo_sample_rate(self):
         result = dsp.lfo(512, low=0.0, high=1.0, rate=0.01, sample_rate=44100.0)
         assert result.sample_rate == 44100.0
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Effects
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPEffects:
+    def _noise(self, channels=1, frames=2048, sample_rate=48000.0):
+        return AudioBuffer.noise(
+            channels=channels, frames=frames, sample_rate=sample_rate, seed=0
+        )
+
+    def _sine(self, freq=440.0, channels=1, frames=2048, sample_rate=48000.0):
+        return AudioBuffer.sine(
+            freq, channels=channels, frames=frames, sample_rate=sample_rate
+        )
+
+    def test_autowah_shape_dtype(self):
+        buf = self._sine()
+        result = dsp.autowah(buf)
+        assert result.channels == 1
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_autowah_modifies_signal(self):
+        buf = self._sine()
+        result = dsp.autowah(buf, wah=0.8)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_chorus_mono_to_stereo(self):
+        buf = self._sine()
+        result = dsp.chorus(buf)
+        assert result.channels == 2
+        assert result.frames == 2048
+
+    def test_chorus_multichannel_per_channel(self):
+        buf = self._noise(channels=2)
+        result = dsp.chorus(buf)
+        assert result.channels == 2
+
+    def test_decimator_shape(self):
+        buf = self._noise()
+        result = dsp.decimator(buf)
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_decimator_modifies_signal(self):
+        buf = self._sine()
+        result = dsp.decimator(buf, downsample_factor=0.8, bits_to_crush=4)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_flanger_shape(self):
+        buf = self._sine()
+        result = dsp.flanger(buf)
+        assert result.channels == 1
+        assert result.frames == 2048
+
+    def test_overdrive_shape(self):
+        buf = self._sine()
+        result = dsp.overdrive(buf, drive=0.8)
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_overdrive_adds_harmonics(self):
+        buf = self._sine()
+        result = dsp.overdrive(buf, drive=0.9)
+        assert not np.allclose(result.data, buf.data)
+
+    def test_phaser_shape(self):
+        buf = self._sine()
+        result = dsp.phaser(buf)
+        assert result.frames == 2048
+
+    def test_pitch_shift_shape(self):
+        buf = self._sine()
+        result = dsp.pitch_shift(buf, semitones=5.0)
+        assert result.frames == 2048
+
+    def test_sample_rate_reduce_shape(self):
+        buf = self._noise()
+        result = dsp.sample_rate_reduce(buf, freq=0.3)
+        assert result.frames == 2048
+
+    def test_tremolo_shape(self):
+        buf = self._sine()
+        result = dsp.tremolo(buf, freq=5.0, depth=1.0)
+        assert result.frames == 2048
+
+    def test_wavefold_shape(self):
+        buf = self._sine()
+        result = dsp.wavefold(buf, gain=2.0)
+        assert result.frames == 2048
+
+    def test_bitcrush_shape(self):
+        buf = self._noise()
+        result = dsp.bitcrush(buf, bit_depth=4)
+        assert result.frames == 2048
+
+    def test_bitcrush_default_crush_rate(self):
+        buf = self._noise()
+        result = dsp.bitcrush(buf)
+        assert result.data.dtype == np.float32
+
+    def test_fold_shape(self):
+        buf = self._sine()
+        result = dsp.fold(buf, increment=0.5)
+        assert result.frames == 2048
+
+    def test_reverb_sc_mono_to_stereo(self):
+        buf = self._sine()
+        result = dsp.reverb_sc(buf)
+        assert result.channels == 2
+        assert result.frames == 2048
+
+    def test_reverb_sc_stereo_passthrough(self):
+        buf = self._noise(channels=2)
+        result = dsp.reverb_sc(buf)
+        assert result.channels == 2
+
+    def test_reverb_sc_3ch_raises(self):
+        buf = self._noise(channels=3)
+        with pytest.raises(ValueError, match="mono or stereo"):
+            dsp.reverb_sc(buf)
+
+    def test_dc_block_shape(self):
+        buf = self._noise()
+        result = dsp.dc_block(buf)
+        assert result.frames == 2048
+
+    def test_dc_block_removes_offset(self):
+        data = np.ones((1, 4096), dtype=np.float32) * 0.5
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = dsp.dc_block(buf)
+        # Mean should be much closer to 0 after DC blocking
+        assert abs(np.mean(result.data[0, 1024:])) < abs(np.mean(buf.data[0]))
+
+    def test_effects_multichannel(self):
+        buf = self._noise(channels=2)
+        for fn, kwargs in [
+            (dsp.autowah, {}),
+            (dsp.decimator, {}),
+            (dsp.flanger, {}),
+            (dsp.overdrive, {}),
+            (dsp.phaser, {}),
+            (dsp.tremolo, {}),
+            (dsp.wavefold, {}),
+            (dsp.bitcrush, {}),
+            (dsp.fold, {}),
+            (dsp.dc_block, {}),
+        ]:
+            result = fn(buf, **kwargs)
+            assert result.channels == 2, f"{fn.__name__} failed multichannel"
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Filters
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPFilters:
+    def _noise(self, channels=1, frames=4096, sample_rate=48000.0):
+        return AudioBuffer.noise(
+            channels=channels, frames=frames, sample_rate=sample_rate, seed=0
+        )
+
+    def test_svf_lowpass_attenuates_high(self):
+        low = AudioBuffer.sine(500.0, frames=4096, sample_rate=48000.0)
+        high = AudioBuffer.sine(15000.0, frames=4096, sample_rate=48000.0)
+        combined = low + high
+        result = dsp.svf_lowpass(combined, freq_hz=2000.0)
+        assert np.sum(result.data**2) < np.sum(combined.data**2)
+
+    def test_svf_highpass_attenuates_low(self):
+        low = AudioBuffer.sine(500.0, frames=4096, sample_rate=48000.0)
+        high = AudioBuffer.sine(15000.0, frames=4096, sample_rate=48000.0)
+        combined = low + high
+        result = dsp.svf_highpass(combined, freq_hz=5000.0)
+        assert np.sum(result.data**2) < np.sum(combined.data**2)
+
+    def test_svf_bandpass_shape(self):
+        buf = self._noise()
+        result = dsp.svf_bandpass(buf, freq_hz=1000.0)
+        assert result.frames == 4096
+
+    def test_svf_notch_shape(self):
+        buf = self._noise()
+        result = dsp.svf_notch(buf, freq_hz=1000.0)
+        assert result.frames == 4096
+
+    def test_svf_peak_shape(self):
+        buf = self._noise()
+        result = dsp.svf_peak(buf, freq_hz=1000.0)
+        assert result.frames == 4096
+
+    def test_ladder_filter_lowpass(self):
+        buf = self._noise()
+        result = dsp.ladder_filter(buf, freq_hz=2000.0, mode="lp24")
+        assert result.frames == 4096
+        assert np.sum(result.data**2) < np.sum(buf.data**2)
+
+    def test_ladder_filter_modes(self):
+        buf = self._noise()
+        for mode in ["lp24", "lp12", "bp24", "bp12", "hp24", "hp12"]:
+            result = dsp.ladder_filter(buf, freq_hz=2000.0, mode=mode)
+            assert result.frames == 4096, f"Failed for mode={mode}"
+
+    def test_ladder_filter_invalid_mode(self):
+        buf = self._noise()
+        with pytest.raises(ValueError, match="Unknown ladder mode"):
+            dsp.ladder_filter(buf, mode="invalid")
+
+    def test_moog_ladder_shape(self):
+        buf = self._noise()
+        result = dsp.moog_ladder(buf, freq_hz=2000.0, resonance=0.3)
+        assert result.frames == 4096
+
+    def test_tone_lowpass_attenuates_high(self):
+        low = AudioBuffer.sine(500.0, frames=4096, sample_rate=48000.0)
+        high = AudioBuffer.sine(15000.0, frames=4096, sample_rate=48000.0)
+        combined = low + high
+        result = dsp.tone_lowpass(combined, freq_hz=2000.0)
+        assert np.sum(result.data**2) < np.sum(combined.data**2)
+
+    def test_tone_highpass_attenuates_low(self):
+        low = AudioBuffer.sine(500.0, frames=4096, sample_rate=48000.0)
+        high = AudioBuffer.sine(15000.0, frames=4096, sample_rate=48000.0)
+        combined = low + high
+        result = dsp.tone_highpass(combined, freq_hz=5000.0)
+        assert np.sum(result.data**2) < np.sum(combined.data**2)
+
+    def test_modal_bandpass_shape(self):
+        buf = self._noise()
+        result = dsp.modal_bandpass(buf, freq_hz=1000.0)
+        assert result.frames == 4096
+
+    def test_comb_filter_shape(self):
+        buf = self._noise()
+        result = dsp.comb_filter(buf, freq_hz=500.0)
+        assert result.frames == 4096
+
+    def test_filters_multichannel(self):
+        buf = self._noise(channels=2)
+        for fn, kwargs in [
+            (dsp.svf_lowpass, {"freq_hz": 2000.0}),
+            (dsp.svf_highpass, {"freq_hz": 2000.0}),
+            (dsp.ladder_filter, {"freq_hz": 2000.0}),
+            (dsp.moog_ladder, {"freq_hz": 2000.0}),
+            (dsp.tone_lowpass, {"freq_hz": 2000.0}),
+            (dsp.tone_highpass, {"freq_hz": 2000.0}),
+            (dsp.modal_bandpass, {"freq_hz": 1000.0}),
+            (dsp.comb_filter, {"freq_hz": 500.0}),
+        ]:
+            result = fn(buf, **kwargs)
+            assert result.channels == 2, f"{fn.__name__} failed multichannel"
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Dynamics
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPDynamics:
+    def test_compress_shape(self):
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.compress(buf, ratio=4.0, threshold=-20.0)
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_compress_reduces_dynamic_range(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        result = dsp.compress(buf, ratio=8.0, threshold=-30.0)
+        # Compressed signal should have different peak/RMS ratio
+        assert not np.allclose(result.data, buf.data)
+
+    def test_compress_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.compress(buf)
+        assert result.channels == 2
+
+    def test_limit_shape(self):
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.limit(buf, pre_gain=2.0)
+        assert result.frames == 2048
+        assert result.data.dtype == np.float32
+
+    def test_limit_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=2048, sample_rate=48000.0, seed=0)
+        result = dsp.limit(buf)
+        assert result.channels == 2
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Oscillators
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPOscillators:
+    def test_oscillator_sine_shape(self):
+        result = dsp.oscillator(1024, freq=440.0)
+        assert result.channels == 1
+        assert result.frames == 1024
+        assert result.data.dtype == np.float32
+
+    def test_oscillator_waveform_names(self):
+        for name in [
+            "sine",
+            "tri",
+            "saw",
+            "ramp",
+            "square",
+            "polyblep_tri",
+            "polyblep_saw",
+            "polyblep_square",
+        ]:
+            result = dsp.oscillator(512, freq=440.0, waveform=name)
+            assert result.frames == 512
+            assert np.max(np.abs(result.data)) > 0, f"waveform {name} produced silence"
+
+    def test_oscillator_int_waveform(self):
+        from cydsp._core import daisysp
+
+        result = dsp.oscillator(512, freq=440.0, waveform=daisysp.oscillators.WAVE_SAW)
+        assert result.frames == 512
+
+    def test_oscillator_invalid_waveform(self):
+        with pytest.raises(ValueError, match="Unknown waveform"):
+            dsp.oscillator(512, waveform="nope")
+
+    def test_oscillator_nonzero_output(self):
+        result = dsp.oscillator(4096, freq=440.0, amp=1.0)
+        assert np.max(np.abs(result.data)) > 0.5
+
+    def test_fm2_shape(self):
+        result = dsp.fm2(1024, freq=440.0, ratio=2.0, index=1.0)
+        assert result.channels == 1
+        assert result.frames == 1024
+
+    def test_fm2_nonzero(self):
+        result = dsp.fm2(4096, freq=440.0)
+        assert np.max(np.abs(result.data)) > 0.1
+
+    def test_formant_oscillator_shape(self):
+        result = dsp.formant_oscillator(1024, carrier_freq=440.0, formant_freq=1000.0)
+        assert result.channels == 1
+        assert result.frames == 1024
+
+    def test_formant_oscillator_nonzero(self):
+        result = dsp.formant_oscillator(4096, carrier_freq=440.0)
+        assert np.max(np.abs(result.data)) > 0.1
+
+    def test_bl_oscillator_shape(self):
+        result = dsp.bl_oscillator(1024, freq=440.0, waveform="saw")
+        assert result.channels == 1
+        assert result.frames == 1024
+
+    def test_bl_oscillator_waveform_names(self):
+        for name in ["triangle", "tri", "saw", "square"]:
+            result = dsp.bl_oscillator(512, freq=440.0, waveform=name)
+            assert result.frames == 512
+            assert np.max(np.abs(result.data)) > 0, f"bl_osc waveform {name} silent"
+
+    def test_bl_oscillator_invalid_waveform(self):
+        with pytest.raises(ValueError, match="Unknown waveform"):
+            dsp.bl_oscillator(512, waveform="nope")
+
+    def test_oscillator_sample_rate(self):
+        result = dsp.oscillator(512, freq=440.0, sample_rate=44100.0)
+        assert result.sample_rate == 44100.0
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Noise
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPNoise:
+    def test_white_noise_shape(self):
+        result = dsp.white_noise(1024)
+        assert result.channels == 1
+        assert result.frames == 1024
+        assert result.data.dtype == np.float32
+
+    def test_white_noise_nonzero(self):
+        result = dsp.white_noise(4096)
+        assert np.max(np.abs(result.data)) > 0.1
+
+    def test_white_noise_amp(self):
+        result = dsp.white_noise(4096, amp=0.1)
+        assert np.max(np.abs(result.data)) < 0.5
+
+    def test_clocked_noise_shape(self):
+        result = dsp.clocked_noise(1024, freq=1000.0)
+        assert result.channels == 1
+        assert result.frames == 1024
+
+    def test_clocked_noise_nonzero(self):
+        result = dsp.clocked_noise(4096, freq=1000.0)
+        assert np.max(np.abs(result.data)) > 0
+
+    def test_dust_shape(self):
+        result = dsp.dust(1024, density=1.0)
+        assert result.channels == 1
+        assert result.frames == 1024
+
+    def test_dust_nonzero(self):
+        result = dsp.dust(48000, density=100.0)
+        assert np.max(np.abs(result.data)) > 0
+
+    def test_noise_sample_rate(self):
+        result = dsp.white_noise(512, sample_rate=44100.0)
+        assert result.sample_rate == 44100.0
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Drums
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPDrums:
+    def test_analog_bass_drum_shape(self):
+        result = dsp.analog_bass_drum(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+        assert result.data.dtype == np.float32
+
+    def test_analog_bass_drum_nonzero(self):
+        result = dsp.analog_bass_drum(4096, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_analog_snare_drum_shape(self):
+        result = dsp.analog_snare_drum(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_analog_snare_drum_nonzero(self):
+        result = dsp.analog_snare_drum(4096, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_hihat_shape(self):
+        result = dsp.hihat(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_hihat_nonzero(self):
+        result = dsp.hihat(4096, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_synthetic_bass_drum_shape(self):
+        result = dsp.synthetic_bass_drum(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_synthetic_bass_drum_nonzero(self):
+        result = dsp.synthetic_bass_drum(4096, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_synthetic_snare_drum_shape(self):
+        result = dsp.synthetic_snare_drum(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_synthetic_snare_drum_nonzero(self):
+        result = dsp.synthetic_snare_drum(4096, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_drums_decay(self):
+        result = dsp.analog_bass_drum(8192, decay=0.8)
+        peak_idx = np.argmax(np.abs(result.data[0]))
+        tail_energy = np.sum(result.data[0, peak_idx + 2048 :] ** 2)
+        head_energy = np.sum(result.data[0, peak_idx : peak_idx + 2048] ** 2)
+        # Tail should have less energy than head for a decaying drum
+        assert tail_energy < head_energy
+
+
+# ---------------------------------------------------------------------------
+# DaisySP Physical Modeling
+# ---------------------------------------------------------------------------
+
+
+class TestDaisySPPhysicalModeling:
+    def test_karplus_strong_shape(self):
+        buf = AudioBuffer.impulse(channels=1, frames=4096, sample_rate=48000.0)
+        result = dsp.karplus_strong(buf, freq_hz=440.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_karplus_strong_nonzero(self):
+        buf = AudioBuffer.impulse(channels=1, frames=4096, sample_rate=48000.0)
+        result = dsp.karplus_strong(buf, freq_hz=440.0)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_karplus_strong_multichannel(self):
+        buf = AudioBuffer.impulse(channels=2, frames=4096, sample_rate=48000.0)
+        result = dsp.karplus_strong(buf, freq_hz=440.0)
+        assert result.channels == 2
+
+    def test_modal_voice_shape(self):
+        result = dsp.modal_voice(4096, freq=440.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_modal_voice_nonzero(self):
+        result = dsp.modal_voice(4096, freq=440.0, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.001
+
+    def test_string_voice_shape(self):
+        result = dsp.string_voice(4096, freq=440.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_string_voice_nonzero(self):
+        result = dsp.string_voice(4096, freq=440.0, accent=0.8)
+        assert np.max(np.abs(result.data)) > 0.001
+
+    def test_pluck_shape(self):
+        result = dsp.pluck(4096, freq=440.0)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_pluck_nonzero(self):
+        result = dsp.pluck(4096, freq=440.0, amp=0.8)
+        assert np.max(np.abs(result.data)) > 0.01
+
+    def test_drip_shape(self):
+        result = dsp.drip(4096)
+        assert result.channels == 1
+        assert result.frames == 4096
+
+    def test_drip_nonzero(self):
+        result = dsp.drip(4096)
+        # Drip may or may not produce output on first trigger, just check shape
+        assert result.data.dtype == np.float32

@@ -9,12 +9,13 @@ Submodules:
     cydsp.spectral  - STFT and spectral processing
     cydsp.rates     - Multi-rate processing (oversampling)
     cydsp.mix       - Multichannel mixing utilities
+    cydsp.daisysp   - DaisySP bindings (oscillators, filters, effects, drums, etc.)
     cydsp.dsp       - High-level AudioBuffer processing functions
     cydsp.io        - WAV file I/O
 """
 
 from cydsp._core import add, greet
-from cydsp._core import filters, fft, delay, envelopes, spectral, rates, mix
+from cydsp._core import filters, fft, delay, envelopes, spectral, rates, mix, daisysp
 from cydsp.buffer import AudioBuffer
 from cydsp import dsp, io
 
@@ -28,6 +29,7 @@ __all__ = [
     "spectral",
     "rates",
     "mix",
+    "daisysp",
     "AudioBuffer",
     "dsp",
     "io",

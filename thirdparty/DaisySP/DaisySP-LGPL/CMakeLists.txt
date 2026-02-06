@@ -30,17 +30,26 @@ set_target_properties(DaisySP_LGPL PROPERTIES PUBLIC
   )
 
 
+target_link_libraries(DaisySP_LGPL PRIVATE DaisySP)
 target_include_directories(DaisySP_LGPL PUBLIC
   ${CMAKE_CURRENT_LIST_DIR}/Source
   PRIVATE
-  "../../Source"
-  "../../Source/Utility"
-  "Source"
-  "Source/Control"
-  "Source/Dynamics"
-  "Source/Effects"
-  "Source/Filters"
-  "Source/PhysicalModeling"
-  "Source/Synthesis"
-  "Source/Utility"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Control"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Drums"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Dynamics"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Effects"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Filters"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Noise"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/PhysicalModeling"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Synthesis"
+  "${CMAKE_CURRENT_LIST_DIR}/../Source/Utility"
+  "${CMAKE_CURRENT_LIST_DIR}/Source"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Control"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Dynamics"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Effects"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Filters"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/PhysicalModeling"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Synthesis"
+  "${CMAKE_CURRENT_LIST_DIR}/Source/Utility"
   )
