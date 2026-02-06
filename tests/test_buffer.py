@@ -387,6 +387,80 @@ class TestCopy:
 # =========================================================================
 
 
+# =========================================================================
+# Pipe
+# =========================================================================
+
+
+class TestPipe:
+    def test_basic_chaining(self):
+        buf = AudioBuffer.ones(1, 64)
+        result = buf.pipe(lambda b: b.gain_db(6.0))
+        assert isinstance(result, AudioBuffer)
+        assert result.frames == 64
+        assert result.data[0, 0] > 1.0
+
+    def test_kwargs_forwarded(self):
+        def scale(b, factor=1.0):
+            return AudioBuffer(
+                b.data * factor,
+                sample_rate=b.sample_rate,
+                channel_layout=b.channel_layout,
+                label=b.label,
+            )
+
+        buf = AudioBuffer.ones(1, 10)
+        result = buf.pipe(scale, factor=3.0)
+        npt.assert_allclose(result.data, 3.0)
+
+    def test_args_forwarded(self):
+        def add_offset(b, offset):
+            return AudioBuffer(
+                b.data + offset,
+                sample_rate=b.sample_rate,
+                channel_layout=b.channel_layout,
+                label=b.label,
+            )
+
+        buf = AudioBuffer.zeros(1, 10)
+        result = buf.pipe(add_offset, 5.0)
+        npt.assert_allclose(result.data, 5.0)
+
+    def test_type_error_on_non_audiobuffer_return(self):
+        buf = AudioBuffer.ones(1, 10)
+        with pytest.raises(TypeError, match="AudioBuffer"):
+            buf.pipe(lambda b: b.data)
+
+    def test_metadata_preserved_through_chain(self):
+        buf = AudioBuffer.zeros(2, 100, sample_rate=44100.0, label="chain_test")
+        result = buf.pipe(lambda b: b.gain_db(0.0))
+        assert result.sample_rate == 44100.0
+        assert result.channel_layout == "stereo"
+        assert result.label == "chain_test"
+
+    def test_multi_step_chain(self):
+        buf = AudioBuffer.ones(1, 10)
+        result = (
+            buf.pipe(lambda b: b.gain_db(6.0))
+            .pipe(lambda b: b.gain_db(6.0))
+            .pipe(lambda b: b.gain_db(-12.0))
+        )
+        npt.assert_allclose(result.data, buf.data, rtol=1e-5)
+
+    def test_integration_with_dsp_functions(self):
+        from cydsp import dsp
+
+        buf = AudioBuffer.sine(1000.0, frames=4096, sample_rate=48000.0)
+        result = buf.pipe(dsp.lowpass, 5000.0)
+        assert isinstance(result, AudioBuffer)
+        assert result.frames == 4096
+
+
+# =========================================================================
+# Validation helpers
+# =========================================================================
+
+
 class TestValidationHelpers:
     def test_ensure_1d(self):
         buf = AudioBuffer.zeros(3, 10)

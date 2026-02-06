@@ -431,6 +431,18 @@ class AudioBuffer:
             label=self._label,
         )
 
+    def pipe(self, fn, *args, **kwargs) -> AudioBuffer:
+        """Chain a DSP function: ``buf.pipe(dsp.lowpass, 5000)``.
+
+        Calls ``fn(self, *args, **kwargs)`` and validates the return type.
+        """
+        result = fn(self, *args, **kwargs)
+        if not isinstance(result, AudioBuffer):
+            raise TypeError(
+                f"pipe() requires fn to return AudioBuffer, got {type(result).__name__}"
+            )
+        return result
+
     # ------------------------------------------------------------------
     # Copy
     # ------------------------------------------------------------------

@@ -309,6 +309,79 @@ class TestFFTFunctions:
 
 
 # ---------------------------------------------------------------------------
+# Convolution
+# ---------------------------------------------------------------------------
+
+
+class TestConvolve:
+    def test_impulse_passthrough(self):
+        """Convolving with a unit impulse should return the input."""
+        buf = AudioBuffer.sine(440.0, frames=1024, sample_rate=48000.0)
+        ir = AudioBuffer.impulse(channels=1, frames=64, sample_rate=48000.0)
+        result = dsp.convolve(buf, ir)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-5)
+
+    def test_output_length_trimmed(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        ir = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=1)
+        result = dsp.convolve(buf, ir, trim=True)
+        assert result.frames == buf.frames
+
+    def test_output_length_full(self):
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
+        ir = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=1)
+        result = dsp.convolve(buf, ir, trim=False)
+        assert result.frames == buf.frames + ir.frames - 1
+
+    def test_mono_ir_broadcast_to_stereo(self):
+        buf = AudioBuffer.noise(channels=2, frames=512, sample_rate=48000.0, seed=0)
+        ir = AudioBuffer.impulse(channels=1, frames=32, sample_rate=48000.0)
+        result = dsp.convolve(buf, ir)
+        assert result.channels == 2
+
+    def test_channel_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=2, frames=512, sample_rate=48000.0, seed=0)
+        ir = AudioBuffer.noise(channels=3, frames=32, sample_rate=48000.0, seed=1)
+        with pytest.raises(ValueError, match="Channel mismatch"):
+            dsp.convolve(buf, ir)
+
+    def test_sample_rate_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=512, sample_rate=48000.0, seed=0)
+        ir = AudioBuffer.noise(channels=1, frames=32, sample_rate=44100.0, seed=1)
+        with pytest.raises(ValueError, match="Sample rate mismatch"):
+            dsp.convolve(buf, ir)
+
+    def test_normalize_flag(self):
+        buf = AudioBuffer.sine(440.0, frames=1024, sample_rate=48000.0)
+        ir_data = np.zeros((1, 64), dtype=np.float32)
+        ir_data[0, 0] = 10.0
+        ir = AudioBuffer(ir_data, sample_rate=48000.0)
+        result_norm = dsp.convolve(buf, ir, normalize=True)
+        result_raw = dsp.convolve(buf, ir, normalize=False)
+        # Normalized should have less energy than raw (IR energy > 1)
+        assert np.sum(result_norm.data**2) < np.sum(result_raw.data**2)
+
+    def test_correctness_vs_np_convolve(self):
+        rng = np.random.default_rng(42)
+        sig = rng.standard_normal(256).astype(np.float32)
+        kernel = rng.standard_normal(32).astype(np.float32)
+        buf = AudioBuffer(sig, sample_rate=48000.0)
+        ir = AudioBuffer(kernel, sample_rate=48000.0)
+        result = dsp.convolve(buf, ir, trim=False)
+        expected = np.convolve(sig, kernel)
+        np.testing.assert_allclose(result.data[0], expected, atol=1e-4)
+
+    def test_metadata_preserved(self):
+        buf = AudioBuffer.noise(
+            channels=1, frames=512, sample_rate=44100.0, seed=0, label="test"
+        )
+        ir = AudioBuffer.impulse(channels=1, frames=32, sample_rate=44100.0)
+        result = dsp.convolve(buf, ir)
+        assert result.sample_rate == 44100.0
+        assert result.label == "test"
+
+
+# ---------------------------------------------------------------------------
 # Rates functions
 # ---------------------------------------------------------------------------
 
@@ -1444,3 +1517,226 @@ class TestSpectralUtilities:
             dsp.spectral_denoise(spec, noise_frames=0)
         with pytest.raises(ValueError, match="exceeds available frames"):
             dsp.spectral_denoise(spec, noise_frames=spec.num_frames + 1)
+
+
+# ---------------------------------------------------------------------------
+# EQ matching
+# ---------------------------------------------------------------------------
+
+
+class TestEqMatch:
+    def test_identity_match(self):
+        """Matching a signal to itself should return roughly the same signal."""
+        buf = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=0)
+        result = dsp.eq_match(buf, buf)
+        assert result.frames == buf.frames
+        # STFT roundtrip has edge effects, check interior
+        margin = 2048
+        np.testing.assert_allclose(
+            result.data[0, margin:-margin],
+            buf.data[0, margin:-margin],
+            atol=0.05,
+        )
+
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=2, frames=8192, sample_rate=48000.0, seed=0)
+        target = AudioBuffer.noise(channels=2, frames=8192, sample_rate=48000.0, seed=1)
+        result = dsp.eq_match(buf, target)
+        assert result.channels == buf.channels
+        assert result.frames == buf.frames
+
+    def test_spectral_tilt_correction(self):
+        """A dark source matched to a bright target should have more high-freq energy."""
+        sr = 48000.0
+        dark = AudioBuffer.noise(channels=1, frames=16384, sample_rate=sr, seed=0)
+        dark = dsp.lowpass(dark, 2000.0)
+        bright = AudioBuffer.noise(channels=1, frames=16384, sample_rate=sr, seed=1)
+        bright = dsp.highpass(bright, 2000.0)
+
+        result = dsp.eq_match(dark, bright, window_size=2048)
+        # Compare spectral centroids
+        spec_dark = dsp.stft(dark, window_size=2048)
+        spec_result = dsp.stft(result, window_size=2048)
+        mag_dark = np.mean(np.abs(spec_dark.data[0]), axis=0)
+        mag_result = np.mean(np.abs(spec_result.data[0]), axis=0)
+        bins = np.arange(len(mag_dark), dtype=np.float32)
+        centroid_dark = np.sum(bins * mag_dark) / (np.sum(mag_dark) + 1e-10)
+        centroid_result = np.sum(bins * mag_result) / (np.sum(mag_result) + 1e-10)
+        assert centroid_result > centroid_dark * 1.5
+
+    def test_smoothing(self):
+        buf = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=0)
+        target = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=1)
+        result = dsp.eq_match(buf, target, smoothing=8)
+        assert result.frames == buf.frames
+
+    def test_sample_rate_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
+        target = AudioBuffer.noise(channels=1, frames=4096, sample_rate=44100.0, seed=1)
+        with pytest.raises(ValueError, match="Sample rate mismatch"):
+            dsp.eq_match(buf, target)
+
+    def test_channel_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=0)
+        target = AudioBuffer.noise(channels=2, frames=8192, sample_rate=48000.0, seed=1)
+        with pytest.raises(ValueError, match="Channel count mismatch"):
+            dsp.eq_match(buf, target)
+
+    def test_channel_mismatch_raises_reverse(self):
+        buf = AudioBuffer.noise(channels=2, frames=8192, sample_rate=48000.0, seed=0)
+        target = AudioBuffer.noise(channels=1, frames=8192, sample_rate=48000.0, seed=1)
+        with pytest.raises(ValueError, match="Channel count mismatch"):
+            dsp.eq_match(buf, target)
+
+
+# ---------------------------------------------------------------------------
+# Loudness metering (LUFS)
+# ---------------------------------------------------------------------------
+
+
+class TestLoudnessLufs:
+    def test_1khz_sine_reference(self):
+        """A full-scale 1 kHz sine at 48 kHz should measure around -3.01 LUFS."""
+        sr = 48000.0
+        frames = int(sr * 5)  # 5 seconds
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        lufs = dsp.loudness_lufs(buf)
+        # Full-scale sine RMS = 1/sqrt(2) => ~-3.01 dBFS
+        # K-weighting at 1kHz is nearly unity, so expect close to -3 LUFS
+        assert -5.0 < lufs < -1.0
+
+    def test_silence_returns_neg_inf(self):
+        buf = AudioBuffer.zeros(1, 48000, sample_rate=48000.0)
+        lufs = dsp.loudness_lufs(buf)
+        assert np.isinf(lufs) and lufs < 0
+
+    def test_short_signal_returns_neg_inf(self):
+        """Signal shorter than 400ms should return -inf."""
+        sr = 48000.0
+        frames = int(sr * 0.3)  # 300ms < 400ms
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        lufs = dsp.loudness_lufs(buf)
+        assert np.isinf(lufs) and lufs < 0
+
+    def test_6db_gain_tracks_linearly(self):
+        """Adding 6 dB should increase LUFS by ~6."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        buf = buf * 0.25  # scale down to avoid clipping after gain
+        lufs_base = dsp.loudness_lufs(buf)
+        boosted = buf.gain_db(6.0)
+        lufs_boosted = dsp.loudness_lufs(boosted)
+        assert abs((lufs_boosted - lufs_base) - 6.0) < 0.5
+
+    def test_stereo(self):
+        """Stereo measurement should work."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.sine(1000.0, channels=2, frames=frames, sample_rate=sr)
+        lufs = dsp.loudness_lufs(buf)
+        # Stereo same-signal doubles power => +3 dB over mono
+        mono_lufs = dsp.loudness_lufs(
+            AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        )
+        assert abs((lufs - mono_lufs) - 3.0) < 0.5
+
+    def test_44100_hz(self):
+        """Should work at 44100 Hz sample rate."""
+        sr = 44100.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        lufs = dsp.loudness_lufs(buf)
+        assert -5.0 < lufs < -1.0
+
+    def test_5_1_lfe_ignored(self):
+        """LFE channel (ch 3) should contribute zero to loudness."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        # 6-channel buffer: only LFE has signal
+        data = np.zeros((6, frames), dtype=np.float32)
+        t = np.arange(frames, dtype=np.float32) / sr
+        data[3] = np.sin(2.0 * np.pi * 60.0 * t).astype(np.float32)
+        buf = AudioBuffer(data, sample_rate=sr)
+        lufs = dsp.loudness_lufs(buf)
+        # LFE weight is 0.0, so this should read as silence
+        assert np.isinf(lufs) and lufs < 0
+
+    def test_5_1_surround_weighted(self):
+        """Surround channels (4, 5) should be weighted +1.5 dB (x1.41)."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        t = np.arange(frames, dtype=np.float32) / sr
+        tone = np.sin(2.0 * np.pi * 1000.0 * t).astype(np.float32) * 0.25
+
+        # Signal in Left only (weight 1.0)
+        data_left = np.zeros((6, frames), dtype=np.float32)
+        data_left[0] = tone
+        lufs_left = dsp.loudness_lufs(AudioBuffer(data_left, sample_rate=sr))
+
+        # Same signal in Left Surround only (weight 1.41)
+        data_ls = np.zeros((6, frames), dtype=np.float32)
+        data_ls[4] = tone
+        lufs_ls = dsp.loudness_lufs(AudioBuffer(data_ls, sample_rate=sr))
+
+        # Surround should measure ~1.5 dB louder
+        delta = lufs_ls - lufs_left
+        assert 1.0 < delta < 2.0
+
+    def test_5_1_vs_stereo_front_channels(self):
+        """Front L+R in 5.1 should match stereo (both weight 1.0)."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        tone = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+
+        stereo = AudioBuffer(np.tile(tone.data, (2, 1)), sample_rate=sr)
+        lufs_stereo = dsp.loudness_lufs(stereo)
+
+        data_51 = np.zeros((6, frames), dtype=np.float32)
+        data_51[0] = tone.data[0]
+        data_51[1] = tone.data[0]
+        lufs_51 = dsp.loudness_lufs(AudioBuffer(data_51, sample_rate=sr))
+
+        assert abs(lufs_51 - lufs_stereo) < 0.5
+
+
+class TestNormalizeLufs:
+    def test_hits_target(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        result = dsp.normalize_lufs(buf, target_lufs=-14.0)
+        measured = dsp.loudness_lufs(result)
+        assert abs(measured - (-14.0)) < 1.5
+
+    def test_silence_raises(self):
+        buf = AudioBuffer.zeros(1, 48000, sample_rate=48000.0)
+        with pytest.raises(ValueError, match="silent or too short"):
+            dsp.normalize_lufs(buf)
+
+    def test_short_signal_raises(self):
+        sr = 48000.0
+        frames = int(sr * 0.3)
+        buf = AudioBuffer.sine(1000.0, channels=1, frames=frames, sample_rate=sr)
+        with pytest.raises(ValueError, match="silent or too short"):
+            dsp.normalize_lufs(buf)
+
+    def test_metadata_preserved(self):
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.sine(
+            1000.0, channels=1, frames=frames, sample_rate=sr, label="norm_test"
+        )
+        result = dsp.normalize_lufs(buf, target_lufs=-14.0)
+        assert result.sample_rate == sr
+        assert result.label == "norm_test"
+
+    def test_idempotent(self):
+        """Normalizing then re-measuring should hit the target."""
+        sr = 48000.0
+        frames = int(sr * 3)
+        buf = AudioBuffer.noise(channels=1, frames=frames, sample_rate=sr, seed=42)
+        for target in [-14.0, -23.0, -9.0]:
+            normalized = dsp.normalize_lufs(buf, target_lufs=target)
+            measured = dsp.loudness_lufs(normalized)
+            assert abs(measured - target) < 0.5, f"target={target}, measured={measured}"

@@ -481,6 +481,103 @@ def irfft(
 
 
 # ---------------------------------------------------------------------------
+# Convolution
+# ---------------------------------------------------------------------------
+
+
+def convolve(
+    buf: AudioBuffer,
+    ir: AudioBuffer,
+    normalize: bool = False,
+    trim: bool = True,
+) -> AudioBuffer:
+    """FFT-based overlap-add convolution.
+
+    Parameters
+    ----------
+    buf : AudioBuffer
+        Input signal.
+    ir : AudioBuffer
+        Impulse response.
+    normalize : bool
+        If True, scale IR to unit energy before convolving.
+    trim : bool
+        If True (default), output has the same length as *buf*.
+        If False, output is the full convolution (buf.frames + ir.frames - 1).
+
+    Raises
+    ------
+    ValueError
+        If sample rates differ or channel counts are incompatible.
+    """
+    if buf.sample_rate != ir.sample_rate:
+        raise ValueError(
+            f"Sample rate mismatch: buf={buf.sample_rate}, ir={ir.sample_rate}"
+        )
+
+    # Channel matching
+    if ir.channels == 1 and buf.channels > 1:
+        ir_data = np.tile(ir.data, (buf.channels, 1))
+    elif ir.channels == buf.channels:
+        ir_data = ir.data
+    else:
+        raise ValueError(
+            f"Channel mismatch: buf has {buf.channels}, ir has {ir.channels}. "
+            "IR must be mono (broadcasts) or match buf channel count."
+        )
+
+    if normalize:
+        for ch in range(ir_data.shape[0]):
+            energy = np.sqrt(np.sum(ir_data[ch] ** 2))
+            if energy > 0:
+                ir_data = ir_data.copy()
+                ir_data[ch] /= energy
+
+    sig_len = buf.frames
+    ir_len = ir.frames
+    full_len = sig_len + ir_len - 1
+    block_size = ir_len
+    fft_size = fft.RealFFT.fast_size_above(2 * block_size)
+
+    n_blocks = (sig_len + block_size - 1) // block_size
+    out = np.zeros((buf.channels, full_len), dtype=np.float32)
+
+    for ch in range(buf.channels):
+        # FFT the IR once
+        ir_padded = np.zeros(fft_size, dtype=np.float32)
+        ir_padded[:ir_len] = ir_data[ch]
+        IR_freq = np.fft.rfft(ir_padded)
+
+        # Pre-slice all signal blocks into [n_blocks, fft_size]
+        blocks = np.zeros((n_blocks, fft_size), dtype=np.float32)
+        for b in range(n_blocks):
+            start = b * block_size
+            end = min(start + block_size, sig_len)
+            blocks[b, : end - start] = buf.data[ch, start:end]
+
+        # Batch FFT, multiply, IFFT
+        block_freqs = np.fft.rfft(blocks, n=fft_size, axis=1)
+        block_freqs *= IR_freq[np.newaxis, :]
+        block_results = np.fft.irfft(block_freqs, n=fft_size, axis=1).astype(np.float32)
+
+        # Overlap-add
+        for b in range(n_blocks):
+            pos = b * block_size
+            out_end = min(pos + fft_size, full_len)
+            out[ch, pos:out_end] += block_results[b, : out_end - pos]
+
+    if trim:
+        out = out[:, :sig_len]
+
+    return AudioBuffer(
+        out,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Rates functions
 # ---------------------------------------------------------------------------
 
@@ -1350,6 +1447,83 @@ def spectral_denoise(
 
 
 # ---------------------------------------------------------------------------
+# EQ matching
+# ---------------------------------------------------------------------------
+
+
+def eq_match(
+    buf: AudioBuffer,
+    target: AudioBuffer,
+    window_size: int = 4096,
+    smoothing: int = 0,
+) -> AudioBuffer:
+    """Match the spectral envelope of *buf* to *target*.
+
+    Parameters
+    ----------
+    buf : AudioBuffer
+        Source audio to be adjusted.
+    target : AudioBuffer
+        Reference audio whose spectral envelope is matched.
+    window_size : int
+        STFT window size.
+    smoothing : int
+        If > 0, apply a moving-average of this width (in bins) to the
+        correction curve.
+
+    Raises
+    ------
+    ValueError
+        If sample rates or channel counts differ.
+    """
+    if buf.sample_rate != target.sample_rate:
+        raise ValueError(
+            f"Sample rate mismatch: buf={buf.sample_rate}, target={target.sample_rate}"
+        )
+    if buf.channels != target.channels:
+        raise ValueError(
+            f"Channel count mismatch: buf has {buf.channels}, target has "
+            f"{target.channels}. Convert to matching layout first "
+            f"(e.g. to_mono())."
+        )
+
+    src_spec = stft(buf, window_size=window_size)
+    tgt_spec = stft(target, window_size=window_size)
+
+    # Mean magnitude across all channels and frames -> [bins]
+    src_avg = np.mean(np.abs(src_spec.data), axis=(0, 1))
+    tgt_avg = np.mean(np.abs(tgt_spec.data), axis=(0, 1))
+
+    eps = 1e-10
+    correction = tgt_avg / (src_avg + eps)
+    correction = np.clip(correction, 0.0, 100.0).astype(np.float32)
+
+    if smoothing > 0:
+        kernel = np.ones(smoothing, dtype=np.float32) / smoothing
+        correction = np.convolve(correction, kernel, mode="same").astype(np.float32)
+
+    # Apply correction as a 1D mask [bins] -- broadcasts across channels/frames
+    corrected = apply_mask(src_spec, correction)
+    result = istft(corrected)
+
+    # Trim to original length
+    if result.frames > buf.frames:
+        result = AudioBuffer(
+            result.data[:, : buf.frames],
+            sample_rate=buf.sample_rate,
+            channel_layout=buf.channel_layout,
+            label=buf.label,
+        )
+
+    return AudioBuffer(
+        result.data,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+
+
+# ---------------------------------------------------------------------------
 # LFO function
 # ---------------------------------------------------------------------------
 
@@ -1902,6 +2076,114 @@ def limit(buf: AudioBuffer, pre_gain: float = 1.0) -> AudioBuffer:
         return lm.process(x, pre_gain)
 
     return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Loudness metering (ITU-R BS.1770-4)
+# ---------------------------------------------------------------------------
+
+
+def _k_weight(x: np.ndarray, sample_rate: float) -> np.ndarray:
+    """Apply two-stage K-weighting to a 1D signal via C++ Biquad.
+
+    Stage 1: high shelf ~+4 dB at 1681 Hz (head/ear acoustic model).
+    Stage 2: highpass at 38 Hz (revised low-frequency B-weighting).
+    """
+    freq_pre = 1681.0 / sample_rate
+    bq_pre = filters.Biquad()
+    bq_pre.high_shelf_db(freq_pre, 4.0)
+    stage1 = bq_pre.process(x)
+    freq_hp = 38.0 / sample_rate
+    bq_hp = filters.Biquad()
+    bq_hp.highpass(freq_hp)
+    return bq_hp.process(stage1)
+
+
+def loudness_lufs(buf: AudioBuffer) -> float:
+    """Measure integrated loudness per ITU-R BS.1770-4.
+
+    Returns
+    -------
+    float
+        Integrated loudness in LUFS. Returns ``-inf`` for silence or
+        signals shorter than 400 ms.
+    """
+    sr = buf.sample_rate
+    block_samples = int(sr * 0.4)  # 400 ms
+    hop_samples = int(sr * 0.1)  # 100 ms (75% overlap)
+
+    if buf.frames < block_samples:
+        return float("-inf")
+
+    # K-weight each channel
+    weighted = []
+    for ch in range(buf.channels):
+        weighted.append(_k_weight(buf.ensure_1d(ch), sr))
+
+    # Channel weights per ITU-R BS.1770-4
+    # 5.1 (6 ch): L=1.0, R=1.0, C=1.0, LFE=0.0, Ls=1.41, Rs=1.41
+    # All other layouts: uniform 1.0
+    if buf.channels == 6:
+        ch_weights = np.array([1.0, 1.0, 1.0, 0.0, 1.41, 1.41], dtype=np.float64)
+    else:
+        ch_weights = np.ones(buf.channels, dtype=np.float64)
+
+    # Compute per-block loudness
+    n_blocks = (buf.frames - block_samples) // hop_samples + 1
+    block_power = np.zeros(n_blocks, dtype=np.float64)
+
+    for i in range(n_blocks):
+        start = i * hop_samples
+        end = start + block_samples
+        power = 0.0
+        for ch in range(buf.channels):
+            segment = weighted[ch][start:end].astype(np.float64)
+            power += ch_weights[ch] * np.mean(segment**2)
+        block_power[i] = power
+
+    # Convert to LUFS
+    eps = 1e-20
+    block_lufs = -0.691 + 10.0 * np.log10(block_power + eps)
+
+    # Absolute gate: -70 LUFS
+    abs_gate_mask = block_lufs >= -70.0
+    if not np.any(abs_gate_mask):
+        return float("-inf")
+
+    # Relative gate: mean of surviving blocks - 10 dB
+    mean_power_abs = np.mean(block_power[abs_gate_mask])
+    rel_gate_lufs = -0.691 + 10.0 * np.log10(mean_power_abs + eps) - 10.0
+    rel_gate_mask = abs_gate_mask & (block_lufs >= rel_gate_lufs)
+
+    if not np.any(rel_gate_mask):
+        return float("-inf")
+
+    # Integrated loudness
+    mean_power = np.mean(block_power[rel_gate_mask])
+    return float(-0.691 + 10.0 * np.log10(mean_power + eps))
+
+
+def normalize_lufs(
+    buf: AudioBuffer,
+    target_lufs: float = -14.0,
+) -> AudioBuffer:
+    """Normalize loudness to *target_lufs*.
+
+    Parameters
+    ----------
+    target_lufs : float
+        Target integrated loudness in LUFS.
+
+    Raises
+    ------
+    ValueError
+        If the input is silent or too short to measure.
+    """
+    current = loudness_lufs(buf)
+    if np.isinf(current):
+        raise ValueError("Cannot normalize: input is silent or too short to measure")
+    delta = target_lufs - current
+    return buf.gain_db(delta)
 
 
 # ---------------------------------------------------------------------------
