@@ -93,9 +93,14 @@ docs:
 	@uv run sphinx-build -b html docs/ docs/_build/html
 
 # Create a release (bump version, tag, push)
-release:
-	@echo "Current version: $$(grep '^version' pyproject.toml | head -1)"
-	@read -p "New version: " version; 	sed -i '' "s/^version = .*/version = \"$$version\"/" pyproject.toml; 	git add pyproject.toml; 	git commit -m "Bump version to $$version"; 	git tag -a "v$$version" -m "Release $$version"; 	echo "Tagged v$$version. Run 'git push && git push --tags' to publish."
+# release:
+# 	@echo "Current version: $$(grep '^version' pyproject.toml | head -1)"
+# 	@read -p "New version: " version && \
+# 		sed -i '' "s/^version = .*/version = \"$$version\"/" pyproject.toml && \
+# 		git add pyproject.toml && \
+# 		git commit -m "Bump version to $$version" && \
+# 		git tag -a "v$$version" -m "Release $$version" && \
+# 		echo "Tagged v$$version. Run 'git push && git push --tags' to publish."
 
 # Clean build artifacts
 clean:
