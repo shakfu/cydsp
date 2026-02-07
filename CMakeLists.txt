@@ -17,9 +17,10 @@ add_subdirectory(thirdparty/signalsmith)
 # DaisySP (MIT + LGPL-2.1)
 add_subdirectory(thirdparty/DaisySP)
 add_subdirectory(thirdparty/DaisySP/DaisySP-LGPL)
-# Suppress warnings in thirdparty DaisySP sources
+# Suppress warnings and fix MSVC compat in thirdparty DaisySP sources
 if(MSVC)
-    target_compile_options(DaisySP PRIVATE /w)
+    set(MSVC_COMPAT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/msvc_compat.h")
+    target_compile_options(DaisySP PRIVATE /w /FI"${MSVC_COMPAT}")
     target_compile_options(DaisySP_LGPL PRIVATE /w)
 else()
     target_compile_options(DaisySP PRIVATE -w)

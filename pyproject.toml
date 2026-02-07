@@ -64,6 +64,7 @@ cmake.build-type = "Release"
 cmake.source-dir = "."
 sdist.include = [
     "CMakeLists.txt",
+    "cmake/",
     "src/",
     "thirdparty/",
 ]
