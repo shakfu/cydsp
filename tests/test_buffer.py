@@ -1,5 +1,7 @@
 """Tests for cydsp.buffer.AudioBuffer."""
 
+import sys
+
 import numpy as np
 import numpy.testing as npt
 import pytest
@@ -159,6 +161,7 @@ class TestNumpyInterop:
         assert "layout='stereo'" in r
         assert "label='input'" in r
 
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="__buffer__ requires Python 3.12+")
     def test_buffer_protocol(self):
         buf = AudioBuffer.sine(440.0, channels=2, frames=128, sample_rate=48000.0)
         mv = memoryview(buf)
@@ -166,6 +169,7 @@ class TestNumpyInterop:
         assert mv.format == "f"  # float32
         assert not mv.readonly
 
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="__buffer__ requires Python 3.12+")
     def test_memoryview_shares_memory(self):
         buf = AudioBuffer.zeros(1, 64)
         mv = memoryview(buf)

@@ -143,8 +143,10 @@ class AudioBuffer:
             return self._data
         return self._data.astype(dtype)
 
-    def __buffer__(self, flags: int, /) -> memoryview:
-        return self._data.__buffer__(flags)
+    if __import__("sys").version_info >= (3, 12):
+
+        def __buffer__(self, flags: int, /) -> memoryview:
+            return self._data.__buffer__(flags)
 
     def __len__(self) -> int:
         """Number of frames (not channels)."""
