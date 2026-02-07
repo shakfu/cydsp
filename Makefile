@@ -58,6 +58,7 @@ dist: wheel sdist check
 
 # Build wheels
 release:
+	@rm -rf dist
 	@uv build --sdist
 	@uv build --wheel --python 3.10
 	@uv build --wheel --python 3.11
@@ -91,16 +92,6 @@ coverage-html:
 # Build documentation (requires sphinx in dev dependencies)
 docs:
 	@uv run sphinx-build -b html docs/ docs/_build/html
-
-# Create a release (bump version, tag, push)
-# release:
-# 	@echo "Current version: $$(grep '^version' pyproject.toml | head -1)"
-# 	@read -p "New version: " version && \
-# 		sed -i '' "s/^version = .*/version = \"$$version\"/" pyproject.toml && \
-# 		git add pyproject.toml && \
-# 		git commit -m "Bump version to $$version" && \
-# 		git tag -a "v$$version" -m "Release $$version" && \
-# 		echo "Tagged v$$version. Run 'git push && git push --tags' to publish."
 
 # Clean build artifacts
 clean:
