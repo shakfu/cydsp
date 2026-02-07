@@ -51,9 +51,12 @@ struct MonoConvolveWrapper {
 
     NpF1 process(ArrayF input) {
         size_t n = input.shape(0);
+        const float *in_data = input.data();
         temp_buf.resize(n);
         auto *out = new float[n];
-        conv.process(input.data(), temp_buf.data(), out, n);
+        { nb::gil_scoped_release rel;
+          conv.process(in_data, temp_buf.data(), out, n);
+        }
         return make_f1(out, n);
     }
 };
@@ -100,7 +103,9 @@ struct ConvolverWrapper {
         for (uint32_t c = 0; c < numOuts; c++)
             out_ptrs[c] = out + c * n;
 
-        conv.process(in_ptrs.data(), out_ptrs.data(), numIns, numOuts, n);
+        { nb::gil_scoped_release rel;
+          conv.process(in_ptrs.data(), out_ptrs.data(), numIns, numOuts, n);
+        }
         return make_f2(out, numOuts, n);
     }
 };
@@ -192,46 +197,53 @@ void bind_hisstools(nb::module_ &m) {
             size_t n1 = in1.shape(0), n2 = in2.shape(0);
             uintptr_t out_size = self.convolved_size(n1, n2, mode);
             if (!out_size) throw std::runtime_error("convolved_size is 0 (check max_fft_size)");
-            // Convert float -> double
-            std::vector<double> d1(n1), d2(n2);
-            for (size_t i = 0; i < n1; i++) d1[i] = in1.data()[i];
-            for (size_t i = 0; i < n2; i++) d2[i] = in2.data()[i];
-            std::vector<double> dout(out_size);
-            SP::in_ptr dp1(d1.data(), n1);
-            SP::in_ptr dp2(d2.data(), n2);
-            self.convolve(dout.data(), dp1, dp2, mode);
+            const float *p1 = in1.data(), *p2 = in2.data();
             auto *out = new float[out_size];
-            for (size_t i = 0; i < out_size; i++) out[i] = static_cast<float>(dout[i]);
+            { nb::gil_scoped_release rel;
+              std::vector<double> d1(n1), d2(n2);
+              for (size_t i = 0; i < n1; i++) d1[i] = p1[i];
+              for (size_t i = 0; i < n2; i++) d2[i] = p2[i];
+              std::vector<double> dout(out_size);
+              SP::in_ptr dp1(d1.data(), n1);
+              SP::in_ptr dp2(d2.data(), n2);
+              self.convolve(dout.data(), dp1, dp2, mode);
+              for (size_t i = 0; i < out_size; i++) out[i] = static_cast<float>(dout[i]);
+            }
             return make_f1(out, out_size);
         }, nb::arg("in1"), nb::arg("in2"), nb::arg("mode") = SPEdge::Linear)
         .def("correlate", [](SP &self, ArrayF in1, ArrayF in2, SPEdge mode) {
             size_t n1 = in1.shape(0), n2 = in2.shape(0);
             uintptr_t out_size = self.correlated_size(n1, n2, mode);
             if (!out_size) throw std::runtime_error("correlated_size is 0 (check max_fft_size)");
-            std::vector<double> d1(n1), d2(n2);
-            for (size_t i = 0; i < n1; i++) d1[i] = in1.data()[i];
-            for (size_t i = 0; i < n2; i++) d2[i] = in2.data()[i];
-            std::vector<double> dout(out_size);
-            SP::in_ptr dp1(d1.data(), n1);
-            SP::in_ptr dp2(d2.data(), n2);
-            self.correlate(dout.data(), dp1, dp2, mode);
+            const float *p1 = in1.data(), *p2 = in2.data();
             auto *out = new float[out_size];
-            for (size_t i = 0; i < out_size; i++) out[i] = static_cast<float>(dout[i]);
+            { nb::gil_scoped_release rel;
+              std::vector<double> d1(n1), d2(n2);
+              for (size_t i = 0; i < n1; i++) d1[i] = p1[i];
+              for (size_t i = 0; i < n2; i++) d2[i] = p2[i];
+              std::vector<double> dout(out_size);
+              SP::in_ptr dp1(d1.data(), n1);
+              SP::in_ptr dp2(d2.data(), n2);
+              self.correlate(dout.data(), dp1, dp2, mode);
+              for (size_t i = 0; i < out_size; i++) out[i] = static_cast<float>(dout[i]);
+            }
             return make_f1(out, out_size);
         }, nb::arg("in1"), nb::arg("in2"), nb::arg("mode") = SPEdge::Linear)
         .def("change_phase", [](SP &self, ArrayF input, double phase, double time_mul) {
             size_t n = input.shape(0);
-            std::vector<double> din(n);
-            for (size_t i = 0; i < n; i++) din[i] = input.data()[i];
-            size_t out_size = static_cast<size_t>(std::round(n * time_mul));
-            if (out_size < 1) out_size = 1;
-            // change_phase writes to output of fft_size, allocate enough
-            uintptr_t fft_log2 = SP::calc_fft_size_log2(out_size);
-            uintptr_t fft_size = uintptr_t(1) << fft_log2;
-            std::vector<double> dout(fft_size, 0.0);
-            self.change_phase(dout.data(), din.data(), n, phase, time_mul);
+            const float *in_data = input.data();
             auto *out = new float[n];
-            for (size_t i = 0; i < n; i++) out[i] = static_cast<float>(dout[i]);
+            { nb::gil_scoped_release rel;
+              std::vector<double> din(n);
+              for (size_t i = 0; i < n; i++) din[i] = in_data[i];
+              size_t out_size = static_cast<size_t>(std::round(n * time_mul));
+              if (out_size < 1) out_size = 1;
+              uintptr_t fft_log2 = SP::calc_fft_size_log2(out_size);
+              uintptr_t fft_size = uintptr_t(1) << fft_log2;
+              std::vector<double> dout(fft_size, 0.0);
+              self.change_phase(dout.data(), din.data(), n, phase, time_mul);
+              for (size_t i = 0; i < n; i++) out[i] = static_cast<float>(dout[i]);
+            }
             return make_f1(out, n);
         }, nb::arg("input"), nb::arg("phase"), nb::arg("time_multiplier") = 1.0)
         .def("convolved_size", &SP::convolved_size,
@@ -256,14 +268,17 @@ void bind_hisstools(nb::module_ &m) {
                           double width_lo, double width_hi, bool symmetric, KSEdge edges) {
             size_t n = input.shape(0);
             size_t kn = kernel.shape(0);
-            // Convert to double
-            std::vector<double> din(n), dkernel(kn);
-            for (size_t i = 0; i < n; i++) din[i] = input.data()[i];
-            for (size_t i = 0; i < kn; i++) dkernel[i] = kernel.data()[i];
-            std::vector<double> dout(n);
-            self.smooth(dout.data(), din.data(), dkernel.data(), n, kn, width_lo, width_hi, symmetric, edges);
+            const float *in_data = input.data();
+            const float *k_data = kernel.data();
             auto *out = new float[n];
-            for (size_t i = 0; i < n; i++) out[i] = static_cast<float>(dout[i]);
+            { nb::gil_scoped_release rel;
+              std::vector<double> din(n), dkernel(kn);
+              for (size_t i = 0; i < n; i++) din[i] = in_data[i];
+              for (size_t i = 0; i < kn; i++) dkernel[i] = k_data[i];
+              std::vector<double> dout(n);
+              self.smooth(dout.data(), din.data(), dkernel.data(), n, kn, width_lo, width_hi, symmetric, edges);
+              for (size_t i = 0; i < n; i++) out[i] = static_cast<float>(dout[i]);
+            }
             return make_f1(out, n);
         }, nb::arg("input"), nb::arg("kernel"),
            nb::arg("width_lo"), nb::arg("width_hi"),

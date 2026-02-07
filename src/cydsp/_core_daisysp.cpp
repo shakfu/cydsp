@@ -43,7 +43,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &Osc::Process)
         .def("process", [](Osc &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Generate n samples.");
 
@@ -59,7 +61,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &Fm::Process)
         .def("process", [](Fm &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -73,7 +77,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &FO::Process)
         .def("process", [](FO &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -90,7 +96,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &HO::Process)
         .def("process", [](HO &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -108,7 +116,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &OB::Process)
         .def("process", [](OB &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -122,7 +132,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &VSaw::Process)
         .def("process", [](VSaw &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -138,7 +150,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &VShape::Process)
         .def("process", [](VShape &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -153,7 +167,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &Vos::Process)
         .def("process", [](Vos &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -168,7 +184,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &ZOsc::Process)
         .def("process", [](ZOsc &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -185,7 +203,9 @@ static void bind_daisysp_oscillators(nb::module_ &m) {
         .def("process_sample", &Bl::Process)
         .def("process", [](Bl &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 }
@@ -218,35 +238,45 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Low(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Low(); }
+            }
             return make_f1(out, n);
         }, "input"_a, "Process buffer returning lowpass output.")
         .def("process_high", [](SVF &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.High(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.High(); }
+            }
             return make_f1(out, n);
         }, "input"_a, "Process buffer returning highpass output.")
         .def("process_band", [](SVF &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Band(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Band(); }
+            }
             return make_f1(out, n);
         }, "input"_a, "Process buffer returning bandpass output.")
         .def("process_notch", [](SVF &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Notch(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Notch(); }
+            }
             return make_f1(out, n);
         }, "input"_a, "Process buffer returning notch output.")
         .def("process_peak", [](SVF &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Peak(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Peak(); }
+            }
             return make_f1(out, n);
         }, "input"_a, "Process buffer returning peak output.");
 
@@ -267,7 +297,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -294,7 +326,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -315,14 +349,18 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Bandpass(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Bandpass(); }
+            }
             return make_f1(out, n);
         }, "input"_a)
         .def("process_bandreject", [](SP &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Bandreject(); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { self.Process(in[i]); out[i] = self.Bandreject(); }
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -343,7 +381,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -359,7 +399,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             float val;
-            for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -375,7 +417,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -395,7 +439,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -412,7 +458,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -428,7 +476,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -448,7 +498,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             auto *out = new float[n];
             // NlFilt::ProcessBlock takes float* in, float* out, size_t
             std::vector<float> in_copy(input.data(), input.data() + n);
-            self.ProcessBlock(in_copy.data(), out, n);
+            { nb::gil_scoped_release rel;
+              self.ProcessBlock(in_copy.data(), out, n);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -464,7 +516,9 @@ static void bind_daisysp_filters(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             float val;
-            for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            }
             return make_f1(out, n);
         }, "input"_a);
 }
@@ -488,7 +542,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -509,17 +565,21 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a, "Process mono input, returns mono (left channel).")
         .def("process_stereo", [](CH &self, ArrayF input) {
             size_t n = input.shape(0);
             auto *out = new float[2 * n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) {
-                self.Process(in[i]);
-                out[i] = self.GetLeft();
-                out[n + i] = self.GetRight();
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  self.Process(in[i]);
+                  out[i] = self.GetLeft();
+                  out[n + i] = self.GetRight();
+              }
             }
             return make_f2(out, 2, n);
         }, "input"_a, "Process mono input, returns stereo [2, frames].");
@@ -537,7 +597,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -555,7 +617,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -569,7 +633,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -587,7 +653,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -604,7 +672,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             float val;
-            for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) { val = input.data()[i]; out[i] = self.Process(val); }
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -618,7 +688,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -634,7 +706,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -649,7 +723,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -666,7 +742,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -680,7 +758,9 @@ static void bind_daisysp_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -703,10 +783,12 @@ static void bind_daisysp_effects(nb::module_ &m) {
             const float *l = input.data();
             const float *r = input.data() + n;
             float o1, o2;
-            for (size_t i = 0; i < n; ++i) {
-                self.Process(l[i], r[i], &o1, &o2);
-                out[i] = o1;
-                out[n + i] = o2;
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  self.Process(l[i], r[i], &o1, &o2);
+                  out[i] = o1;
+                  out[n + i] = o2;
+              }
             }
             return make_f2(out, 2, n);
         }, "input"_a, "Process stereo buffer [2, frames] -> [2, frames].");
@@ -739,9 +821,11 @@ static void bind_daisysp_dynamics(nb::module_ &m) {
             if (input2.shape(0) != n) throw std::invalid_argument("Inputs must have same length");
             auto *out = new float[n];
             float a, b;
-            for (size_t i = 0; i < n; ++i) {
-                a = input1.data()[i]; b = input2.data()[i];
-                out[i] = self.Process(a, b);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  a = input1.data()[i]; b = input2.data()[i];
+                  out[i] = self.Process(a, b);
+              }
             }
             return make_f1(out, n);
         }, "input1"_a, "input2"_a);
@@ -754,7 +838,9 @@ static void bind_daisysp_dynamics(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             std::copy(input.data(), input.data() + n, out);
-            self.ProcessBlock(out, n, pre_gain);
+            { nb::gil_scoped_release rel;
+              self.ProcessBlock(out, n, pre_gain);
+            }
             return make_f1(out, n);
         }, "input"_a, "pre_gain"_a = 1.0f);
 
@@ -772,7 +858,9 @@ static void bind_daisysp_dynamics(nb::module_ &m) {
             auto *out = new float[n];
             const float *s = sig.data();
             const float *c = comp.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(s[i], c[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(s[i], c[i]);
+            }
             return make_f1(out, n);
         }, "sig"_a, "comp"_a);
 
@@ -798,7 +886,9 @@ static void bind_daisysp_dynamics(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 }
@@ -830,7 +920,9 @@ static void bind_daisysp_control(nb::module_ &m) {
         .def("process_sample", &AE::Process)
         .def("process", [](AE &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Generate n envelope samples.");
 
@@ -857,7 +949,9 @@ static void bind_daisysp_control(nb::module_ &m) {
             size_t n = gate.shape(0);
             auto *out = new float[n];
             const float *g = gate.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(g[i] > 0.5f);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(g[i] > 0.5f);
+            }
             return make_f1(out, n);
         }, "gate"_a, "Process gate signal (>0.5 = on).");
 
@@ -871,7 +965,9 @@ static void bind_daisysp_control(nb::module_ &m) {
         .def("process_sample", &PHS::Process)
         .def("process", [](PHS &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -884,8 +980,10 @@ static void bind_daisysp_control(nb::module_ &m) {
         .def("process", [](LN &self, int n) {
             auto *out = new float[n];
             uint8_t finished = 0;
-            for (int i = 0; i < n; ++i) {
-                out[i] = self.Process(&finished);
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) {
+                  out[i] = self.Process(&finished);
+              }
             }
             return nb::make_tuple(make_f1(out, (size_t)n), (bool)finished);
         }, "n"_a, "Generate n samples. Returns (samples, finished).");
@@ -906,7 +1004,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &WN::Process)
         .def("process", [](WN &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -918,7 +1018,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &DU::Process)
         .def("process", [](DU &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -931,7 +1033,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &CN::Process)
         .def("process", [](CN &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -945,7 +1049,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &FRG::Process)
         .def("process", [](FRG &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -960,7 +1066,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &GL::Process)
         .def("process", [](GL &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -978,7 +1086,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &PT::Process)
         .def("process", [](PT &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -990,7 +1100,9 @@ static void bind_daisysp_noise(nb::module_ &m) {
         .def("process_sample", &SR::Process)
         .def("process", [](SR &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 }
@@ -1018,8 +1130,10 @@ static void bind_daisysp_drums(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](ABD &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1038,8 +1152,10 @@ static void bind_daisysp_drums(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](ASD &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1059,8 +1175,10 @@ static void bind_daisysp_drums(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](HH &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1081,8 +1199,10 @@ static void bind_daisysp_drums(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](SBD &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1101,8 +1221,10 @@ static void bind_daisysp_drums(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](SSD &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 }
@@ -1121,8 +1243,10 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
         .def("process_sample", &DR::Process, "trig"_a)
         .def("process", [](DR &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1141,7 +1265,9 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a, "Process excitation input.");
 
@@ -1161,8 +1287,10 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](MV &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1179,7 +1307,9 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -1200,8 +1330,10 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
              "trigger"_a = false)
         .def("process", [](SV &self, int n) {
             auto *out = new float[n];
-            out[0] = self.Process(true);
-            for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(true);
+              for (int i = 1; i < n; ++i) out[i] = self.Process(false);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 
@@ -1225,9 +1357,11 @@ static void bind_daisysp_physical_modeling(nb::module_ &m) {
         .def("process", [](PL &self, int n) {
             auto *out = new float[n];
             float trig = 1.0f;
-            out[0] = self.Process(trig);
-            trig = 0.0f;
-            for (int i = 1; i < n; ++i) out[i] = self.Process(trig);
+            { nb::gil_scoped_release rel;
+              out[0] = self.Process(trig);
+              trig = 0.0f;
+              for (int i = 1; i < n; ++i) out[i] = self.Process(trig);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a, "Trigger and generate n samples.");
 }
@@ -1248,7 +1382,9 @@ static void bind_daisysp_utility(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -1269,9 +1405,11 @@ static void bind_daisysp_utility(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) {
-                self.Write(in[i]);
-                out[i] = self.Read(delay_samples);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  self.Write(in[i]);
+                  out[i] = self.Read(delay_samples);
+              }
             }
             return make_f1(out, n);
         }, "input"_a, "delay_samples"_a, "Write input and read with fixed delay.");
@@ -1307,7 +1445,9 @@ static void bind_daisysp_utility(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -1326,7 +1466,9 @@ static void bind_daisysp_utility(nb::module_ &m) {
         .def("process_sample", [](ME &self) { return (bool)self.Process(); })
         .def("process", [](ME &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -1351,7 +1493,9 @@ static void bind_daisysp_utility(nb::module_ &m) {
         .def("process_sample", &JT::Process)
         .def("process", [](JT &self, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = self.Process();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = self.Process();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -1366,7 +1510,9 @@ static void bind_daisysp_utility(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = self.Process(in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 }

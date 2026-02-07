@@ -1,3 +1,3 @@
 """cydsp - Python bindings of a set of dsp libraries via nanobind."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"

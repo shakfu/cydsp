@@ -12,20 +12,22 @@ NpF1 ml_process(ArrayF input, Fn fn) {
     size_t n = input.shape(0);
     auto *out = new float[n];
     const float *in = input.data();
-    size_t pos = 0;
-    while (pos + kBlock <= n) {
-        DSPVector vIn(in + pos);
-        DSPVector vOut = fn(vIn);
-        std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + kBlock, out + pos);
-        pos += kBlock;
-    }
-    if (pos < n) {
-        size_t rem = n - pos;
-        float padded[kBlock] = {};
-        std::copy(in + pos, in + n, padded);
-        DSPVector vIn(padded);
-        DSPVector vOut = fn(vIn);
-        std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + rem, out + pos);
+    { nb::gil_scoped_release rel;
+      size_t pos = 0;
+      while (pos + kBlock <= n) {
+          DSPVector vIn(in + pos);
+          DSPVector vOut = fn(vIn);
+          std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + kBlock, out + pos);
+          pos += kBlock;
+      }
+      if (pos < n) {
+          size_t rem = n - pos;
+          float padded[kBlock] = {};
+          std::copy(in + pos, in + n, padded);
+          DSPVector vIn(padded);
+          DSPVector vOut = fn(vIn);
+          std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + rem, out + pos);
+      }
     }
     return make_f1(out, n);
 }
@@ -36,26 +38,28 @@ NpF2 ml_process_stereo(ArrayF input, Fn fn) {
     size_t n = input.shape(0);
     auto *out = new float[2 * n];
     const float *in = input.data();
-    size_t pos = 0;
-    while (pos + kBlock <= n) {
-        DSPVector vIn(in + pos);
-        DSPVectorArray<2> vOut = fn(vIn);
-        const float *left = vOut.getConstBuffer();
-        const float *right = vOut.getConstBuffer() + kBlock;
-        std::copy(left, left + kBlock, out + pos);
-        std::copy(right, right + kBlock, out + n + pos);
-        pos += kBlock;
-    }
-    if (pos < n) {
-        size_t rem = n - pos;
-        float padded[kBlock] = {};
-        std::copy(in + pos, in + n, padded);
-        DSPVector vIn(padded);
-        DSPVectorArray<2> vOut = fn(vIn);
-        const float *left = vOut.getConstBuffer();
-        const float *right = vOut.getConstBuffer() + kBlock;
-        std::copy(left, left + rem, out + pos);
-        std::copy(right, right + rem, out + n + pos);
+    { nb::gil_scoped_release rel;
+      size_t pos = 0;
+      while (pos + kBlock <= n) {
+          DSPVector vIn(in + pos);
+          DSPVectorArray<2> vOut = fn(vIn);
+          const float *left = vOut.getConstBuffer();
+          const float *right = vOut.getConstBuffer() + kBlock;
+          std::copy(left, left + kBlock, out + pos);
+          std::copy(right, right + kBlock, out + n + pos);
+          pos += kBlock;
+      }
+      if (pos < n) {
+          size_t rem = n - pos;
+          float padded[kBlock] = {};
+          std::copy(in + pos, in + n, padded);
+          DSPVector vIn(padded);
+          DSPVectorArray<2> vOut = fn(vIn);
+          const float *left = vOut.getConstBuffer();
+          const float *right = vOut.getConstBuffer() + kBlock;
+          std::copy(left, left + rem, out + pos);
+          std::copy(right, right + rem, out + n + pos);
+      }
     }
     return make_f2(out, 2, n);
 }
@@ -67,24 +71,26 @@ NpF1 ml_process2(ArrayF input1, ArrayF input2, Fn fn) {
     auto *out = new float[n];
     const float *in1 = input1.data();
     const float *in2 = input2.data();
-    size_t pos = 0;
-    while (pos + kBlock <= n) {
-        DSPVector v1(in1 + pos);
-        DSPVector v2(in2 + pos);
-        DSPVector vOut = fn(v1, v2);
-        std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + kBlock, out + pos);
-        pos += kBlock;
-    }
-    if (pos < n) {
-        size_t rem = n - pos;
-        float p1[kBlock] = {};
-        float p2[kBlock] = {};
-        std::copy(in1 + pos, in1 + n, p1);
-        std::copy(in2 + pos, in2 + n, p2);
-        DSPVector v1(p1);
-        DSPVector v2(p2);
-        DSPVector vOut = fn(v1, v2);
-        std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + rem, out + pos);
+    { nb::gil_scoped_release rel;
+      size_t pos = 0;
+      while (pos + kBlock <= n) {
+          DSPVector v1(in1 + pos);
+          DSPVector v2(in2 + pos);
+          DSPVector vOut = fn(v1, v2);
+          std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + kBlock, out + pos);
+          pos += kBlock;
+      }
+      if (pos < n) {
+          size_t rem = n - pos;
+          float p1[kBlock] = {};
+          float p2[kBlock] = {};
+          std::copy(in1 + pos, in1 + n, p1);
+          std::copy(in2 + pos, in2 + n, p2);
+          DSPVector v1(p1);
+          DSPVector v2(p2);
+          DSPVector vOut = fn(v1, v2);
+          std::copy(vOut.getConstBuffer(), vOut.getConstBuffer() + rem, out + pos);
+      }
     }
     return make_f1(out, n);
 }
@@ -101,7 +107,9 @@ static void bind_projections(nb::module_ &mod) {
         size_t n = input.shape(0); \
         auto *out = new float[n]; \
         const float *in = input.data(); \
-        for (size_t i = 0; i < n; ++i) out[i] = ml::projections::mlname(in[i]); \
+        { nb::gil_scoped_release rel; \
+          for (size_t i = 0; i < n; ++i) out[i] = ml::projections::mlname(in[i]); \
+        } \
         return make_f1(out, n); \
     }, "input"_a);
 
@@ -286,9 +294,6 @@ static void bind_resampling(nb::module_ &mod) {
         .def("clear", &ml::Downsampler::clear)
         .def("process", [](ml::Downsampler &self, ArrayF input) -> NpF1 {
             size_t n = input.shape(0);
-            // Determine octaves from object -- we need to figure out the ratio
-            // by feeding blocks and checking when output is ready.
-            // Input must be a multiple of 64 samples.
             if (n % kBlock != 0)
                 throw std::invalid_argument(
                     "Input length must be a multiple of 64 (BLOCK_SIZE)");
@@ -296,15 +301,17 @@ static void bind_resampling(nb::module_ &mod) {
             const float *in = input.data();
             size_t blocks_in = n / kBlock;
             std::vector<float> result;
-            result.reserve(n);  // upper bound
+            result.reserve(n);
 
-            for (size_t i = 0; i < blocks_in; ++i) {
-                DSPVector v(in + i * kBlock);
-                if (self.write(v)) {
-                    DSPVector out = self.read();
-                    const float *buf = out.getConstBuffer();
-                    result.insert(result.end(), buf, buf + kBlock);
-                }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < blocks_in; ++i) {
+                  DSPVector v(in + i * kBlock);
+                  if (self.write(v)) {
+                      DSPVector out = self.read();
+                      const float *buf = out.getConstBuffer();
+                      result.insert(result.end(), buf, buf + kBlock);
+                  }
+              }
             }
 
             size_t out_n = result.size();
@@ -330,15 +337,17 @@ static void bind_resampling(nb::module_ &mod) {
             auto *out = new float[out_n];
             size_t out_pos = 0;
 
-            for (size_t i = 0; i < blocks_in; ++i) {
-                DSPVector v(in + i * kBlock);
-                self.write(v);
-                for (int r = 0; r < reads_per_write; ++r) {
-                    DSPVector rd = self.read();
-                    const float *buf = rd.getConstBuffer();
-                    std::copy(buf, buf + kBlock, out + out_pos);
-                    out_pos += kBlock;
-                }
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < blocks_in; ++i) {
+                  DSPVector v(in + i * kBlock);
+                  self.write(v);
+                  for (int r = 0; r < reads_per_write; ++r) {
+                      DSPVector rd = self.read();
+                      const float *buf = rd.getConstBuffer();
+                      std::copy(buf, buf + kBlock, out + out_pos);
+                      out_pos += kBlock;
+                  }
+              }
             }
 
             return make_f1(out, out_n);
@@ -374,15 +383,17 @@ static void bind_generators(nb::module_ &mod) {
         .def("process", [](ml::LinearGlide &self, float target, int n) -> NpF1 {
             if (n < 0) throw std::invalid_argument("n must be >= 0");
             auto *out = new float[n];
-            size_t pos = 0;
-            while (pos + kBlock <= (size_t)n) {
-                DSPVector v = self(target);
-                std::copy(v.getConstBuffer(), v.getConstBuffer() + kBlock, out + pos);
-                pos += kBlock;
-            }
-            if (pos < (size_t)n) {
-                DSPVector v = self(target);
-                std::copy(v.getConstBuffer(), v.getConstBuffer() + ((size_t)n - pos), out + pos);
+            { nb::gil_scoped_release rel;
+              size_t pos = 0;
+              while (pos + kBlock <= (size_t)n) {
+                  DSPVector v = self(target);
+                  std::copy(v.getConstBuffer(), v.getConstBuffer() + kBlock, out + pos);
+                  pos += kBlock;
+              }
+              if (pos < (size_t)n) {
+                  DSPVector v = self(target);
+                  std::copy(v.getConstBuffer(), v.getConstBuffer() + ((size_t)n - pos), out + pos);
+              }
             }
             return make_f1(out, (size_t)n);
         }, "target"_a, "n"_a);
@@ -401,8 +412,10 @@ static void bind_generators(nb::module_ &mod) {
                            float target, int n) -> NpF1 {
             if (n < 0) throw std::invalid_argument("n must be >= 0");
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i)
-                out[i] = self.nextSample(target);
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i)
+                  out[i] = self.nextSample(target);
+            }
             return make_f1(out, (size_t)n);
         }, "target"_a, "n"_a);
 
@@ -435,7 +448,9 @@ void bind_madronalib(nb::module_ &m) {
         size_t n = input.shape(0);
         auto *out = new float[n];
         const float *in = input.data();
-        for (size_t i = 0; i < n; ++i) out[i] = ml::ampTodB(in[i]);
+        { nb::gil_scoped_release rel;
+          for (size_t i = 0; i < n; ++i) out[i] = ml::ampTodB(in[i]);
+        }
         return make_f1(out, n);
     }, "amplitude"_a);
 
@@ -444,7 +459,9 @@ void bind_madronalib(nb::module_ &m) {
         size_t n = input.shape(0);
         auto *out = new float[n];
         const float *in = input.data();
-        for (size_t i = 0; i < n; ++i) out[i] = ml::dBToAmp(in[i]);
+        { nb::gil_scoped_release rel;
+          for (size_t i = 0; i < n; ++i) out[i] = ml::dBToAmp(in[i]);
+        }
         return make_f1(out, n);
     }, "db"_a);
 

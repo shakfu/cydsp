@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Changed
+
+- **GIL release in C++ bindings** -- all ~160 processing functions across 6 binding files now release the Python GIL during computation via `nb::gil_scoped_release`, enabling true multi-threaded parallelism
+  - `_core_signalsmith.cpp` -- Biquad, FFT, RealFFT, Delay, LFO, envelope, STFT, Oversampler processing
+  - `_core_daisysp.cpp` -- 73 functions: oscillators, filters, effects, dynamics, control, noise, drums, physical modeling, utility
+  - `_core_stk.cpp` -- generators, filters (via macro), reverbs (via macro), instruments (via macro), effects, Guitar, Twang
+  - `_core_madronalib.cpp` -- `ml_process`/`ml_process_stereo`/`ml_process2` templates (propagates to FDN reverbs, delay, resampling, generators), projections, amp/dB conversions
+  - `_core_hisstools.cpp` -- MonoConvolve, Convolver, SpectralProcessor (convolve/correlate/change_phase), KernelSmoother
+  - `_core_choc.cpp` -- FLAC read/write file I/O
+
+### Fixed
+
+- **Cross-platform build** (Linux, macOS, Windows)
+  - Linux: `CMAKE_POSITION_INDEPENDENT_CODE` for static libs linked into shared `.so`
+  - Linux: Suppressed GCC `-Wmaybe-uninitialized` false positives from HISSTools `Statistics.hpp`
+  - Linux: Dropped aarch64 wheels (HISSTools NEON code requires Apple Clang-specific implicit type conversions)
+  - macOS: Set `MACOSX_DEPLOYMENT_TARGET=10.15` for `std::filesystem::path` and nanobind aligned deallocation
+  - macOS: Architecture detection via compiler built-in defines (`__aarch64__`) instead of `CMAKE_SYSTEM_PROCESSOR` (correct under cross-compilation)
+  - macOS: `cmake/hisstools_arch_compat.h` -- bridges `__aarch64__` (GCC/Linux) to `__arm64__` (Apple/HISSTools)
+  - Windows: `NOMINMAX` and `_USE_MATH_DEFINES` for MSVC across all targets
+  - Windows: `cmake/msvc_compat.h` -- `__attribute__` no-op and `<cmath>` includes for DaisySP
+  - Python < 3.12: Guarded `AudioBuffer.__buffer__` (PEP 688) behind version check
+
+- **CI/CD** (`.github/workflows/`)
+  - `build-publish.yml` -- cibuildwheel v3.3.1 wheel builds for Linux x86_64, macOS arm64+x86_64, Windows AMD64; TestPyPI + PyPI publish via trusted publishing
+  - `ci.yml` -- QA (ruff lint/format, mypy typecheck) + native build/test matrix (ubuntu/macOS/Windows, Python 3.10+3.14)
+  - Cross-compile macOS x86_64 wheels from ARM64 runner (macos-latest); tests skipped for x86_64
+
 ## [0.1.1]
 
 ### Added

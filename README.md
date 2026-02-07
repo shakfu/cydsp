@@ -40,7 +40,7 @@ Use `make help` for additional targets (build, test, lint, format, typecheck, qa
 
 ## CLI
 
-cydsp ships a command-line interface accessible via `cydsp` or `python -m cydsp`.
+cydsp ships with a command-line interface accessible via `cydsp` or `python -m cydsp`.
 
 ```bash
 # File info

@@ -70,7 +70,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](SineWave &s) { return (float)s.tick(); })
         .def("process", [](SineWave &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -81,7 +83,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](Noise &s) { return (float)s.tick(); })
         .def("process", [](Noise &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -96,7 +100,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](Blit &s) { return (float)s.tick(); })
         .def("process", [](Blit &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -109,7 +115,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](BlitSaw &s) { return (float)s.tick(); })
         .def("process", [](BlitSaw &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -124,7 +132,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](BlitSquare &s) { return (float)s.tick(); })
         .def("process", [](BlitSquare &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -157,7 +167,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](ADSR &s) { return (float)s.tick(); })
         .def("process", [](ADSR &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -175,7 +187,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](Asymp &s) { return (float)s.tick(); })
         .def("process", [](Asymp &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -192,7 +206,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](Envelope &s) { return (float)s.tick(); })
         .def("process", [](Envelope &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -207,7 +223,9 @@ static void bind_stk_generators(nb::module_ &m) {
         .def("process_sample", [](Modulate &s) { return (float)s.tick(); })
         .def("process", [](Modulate &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 }
@@ -225,7 +243,9 @@ static void bind_stk_generators(nb::module_ &m) {
         size_t n = input.shape(0); \
         auto *out = new float[n]; \
         const float *in = input.data(); \
-        for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]); \
+        { nb::gil_scoped_release rel; \
+          for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]); \
+        } \
         return make_f1(out, n); \
     }, "input"_a)
 
@@ -365,7 +385,9 @@ static void bind_stk_filters(nb::module_ &m) {
         .def("process_sample", [](Resonate &s) { return (float)s.tick(); })
         .def("process", [](Resonate &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick();
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -475,10 +497,12 @@ static void bind_stk_delays(nb::module_ &m) {
             size_t n = input.shape(0); \
             auto *out = new float[2 * n]; \
             const float *in = input.data(); \
-            for (size_t i = 0; i < n; ++i) { \
-                s.tick((StkFloat)in[i]); \
-                out[i] = (float)s.lastOut(0); \
-                out[n + i] = (float)s.lastOut(1); \
+            { nb::gil_scoped_release rel; \
+              for (size_t i = 0; i < n; ++i) { \
+                  s.tick((StkFloat)in[i]); \
+                  out[i] = (float)s.lastOut(0); \
+                  out[n + i] = (float)s.lastOut(1); \
+              } \
             } \
             return make_f2(out, 2, n); \
         }, "input"_a)
@@ -510,10 +534,12 @@ static void bind_stk_effects(nb::module_ &m) {
             auto *out = new float[2 * n];
             const float *l = input.data();
             const float *r = input.data() + n;
-            for (size_t i = 0; i < n; ++i) {
-                s.tick((StkFloat)l[i], (StkFloat)r[i]);
-                out[i] = (float)s.lastOut(0);
-                out[n + i] = (float)s.lastOut(1);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  s.tick((StkFloat)l[i], (StkFloat)r[i]);
+                  out[i] = (float)s.lastOut(0);
+                  out[n + i] = (float)s.lastOut(1);
+              }
             }
             return make_f2(out, 2, n);
         }, "input"_a)
@@ -522,10 +548,12 @@ static void bind_stk_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[2 * n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) {
-                s.tick((StkFloat)in[i], 0.0);
-                out[i] = (float)s.lastOut(0);
-                out[n + i] = (float)s.lastOut(1);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  s.tick((StkFloat)in[i], 0.0);
+                  out[i] = (float)s.lastOut(0);
+                  out[n + i] = (float)s.lastOut(1);
+              }
             }
             return make_f2(out, 2, n);
         }, "input"_a);
@@ -549,7 +577,9 @@ static void bind_stk_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -568,10 +598,12 @@ static void bind_stk_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[2 * n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) {
-                s.tick((StkFloat)in[i]);
-                out[i] = (float)s.lastOut(0);
-                out[n + i] = (float)s.lastOut(1);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) {
+                  s.tick((StkFloat)in[i]);
+                  out[i] = (float)s.lastOut(0);
+                  out[n + i] = (float)s.lastOut(1);
+              }
             }
             return make_f2(out, 2, n);
         }, "input"_a);
@@ -589,7 +621,9 @@ static void bind_stk_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 
@@ -605,7 +639,9 @@ static void bind_stk_effects(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 }
@@ -626,7 +662,9 @@ static void bind_stk_effects(nb::module_ &m) {
     .def("process_sample", [](CLS &s) { return (float)s.tick(); }) \
     .def("process", [](CLS &s, int n) { \
         auto *out = new float[n]; \
-        for (int i = 0; i < n; ++i) out[i] = (float)s.tick(); \
+        { nb::gil_scoped_release rel; \
+          for (int i = 0; i < n; ++i) out[i] = (float)s.tick(); \
+        } \
         return make_f1(out, (size_t)n); \
     }, "n"_a)
 
@@ -750,7 +788,9 @@ static void bind_stk_instruments(nb::module_ &m) {
              "input"_a = 0.0f)
         .def("process", [](Guitar &s, int n) {
             auto *out = new float[n];
-            for (int i = 0; i < n; ++i) out[i] = (float)s.tick(0.0);
+            { nb::gil_scoped_release rel;
+              for (int i = 0; i < n; ++i) out[i] = (float)s.tick(0.0);
+            }
             return make_f1(out, (size_t)n);
         }, "n"_a);
 
@@ -771,7 +811,9 @@ static void bind_stk_instruments(nb::module_ &m) {
             size_t n = input.shape(0);
             auto *out = new float[n];
             const float *in = input.data();
-            for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            { nb::gil_scoped_release rel;
+              for (size_t i = 0; i < n; ++i) out[i] = (float)s.tick((StkFloat)in[i]);
+            }
             return make_f1(out, n);
         }, "input"_a);
 }

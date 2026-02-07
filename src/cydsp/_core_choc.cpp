@@ -11,7 +11,10 @@ void bind_choc(nb::module_ &m) {
 
     choc_m.def("read_flac", [](const std::string &path) -> nb::tuple {
         choc::audio::FLACAudioFileFormat<true> format;
-        auto reader = format.createReader(std::filesystem::path(path));
+        std::unique_ptr<choc::audio::AudioFileReader> reader;
+        { nb::gil_scoped_release rel;
+          reader = format.createReader(std::filesystem::path(path));
+        }
         if (!reader)
             throw std::runtime_error("Failed to open FLAC file: " + path);
 
@@ -25,17 +28,17 @@ void bind_choc(nb::module_ &m) {
             return nb::make_tuple(make_f2(out, numChannels, 0), sampleRate);
         }
 
-        auto buffer = reader->readEntireStream<float>();
-
-        // Copy from channel-array layout to planar numpy [channels, frames]
         float *out = new float[(size_t)numChannels * numFrames];
-        for (uint32_t ch = 0; ch < numChannels; ++ch) {
-            auto iter = buffer.getIterator(ch);
-            float *dst = out + (size_t)ch * numFrames;
-            for (uint32_t f = 0; f < numFrames; ++f) {
-                dst[f] = *iter;
-                ++iter;
-            }
+        { nb::gil_scoped_release rel;
+          auto buffer = reader->readEntireStream<float>();
+          for (uint32_t ch = 0; ch < numChannels; ++ch) {
+              auto iter = buffer.getIterator(ch);
+              float *dst = out + (size_t)ch * numFrames;
+              for (uint32_t f = 0; f < numFrames; ++f) {
+                  dst[f] = *iter;
+                  ++iter;
+              }
+          }
         }
 
         return nb::make_tuple(make_f2(out, numChannels, numFrames), sampleRate);
@@ -61,29 +64,31 @@ void bind_choc(nb::module_ &m) {
                     " (use 16 or 24)");
         }
 
-        choc::audio::FLACAudioFileFormat<true> format;
-        auto writer = format.createWriter(std::filesystem::path(path), props);
-        if (!writer)
-            throw std::runtime_error("Failed to create FLAC writer for: " + path);
-
-        if (numFrames == 0) {
-            writer->flush();
-            return;
-        }
-
         // Build channel pointer array from 2D contiguous numpy (rows = channels)
         std::vector<float *> channelPtrs(numChannels);
         for (uint32_t ch = 0; ch < numChannels; ++ch)
             channelPtrs[ch] = data.data() + (size_t)ch * numFrames;
 
-        auto view = choc::buffer::createChannelArrayView(
-            channelPtrs.data(), numChannels, numFrames);
+        { nb::gil_scoped_release rel;
+          choc::audio::FLACAudioFileFormat<true> format;
+          auto writer = format.createWriter(std::filesystem::path(path), props);
+          if (!writer)
+              throw std::runtime_error("Failed to create FLAC writer for: " + path);
 
-        if (!writer->appendFrames(view))
-            throw std::runtime_error("Failed to write FLAC frames to: " + path);
+          if (numFrames == 0) {
+              writer->flush();
+              return;
+          }
 
-        if (!writer->flush())
-            throw std::runtime_error("Failed to flush FLAC file: " + path);
+          auto view = choc::buffer::createChannelArrayView(
+              channelPtrs.data(), numChannels, numFrames);
+
+          if (!writer->appendFrames(view))
+              throw std::runtime_error("Failed to write FLAC frames to: " + path);
+
+          if (!writer->flush())
+              throw std::runtime_error("Failed to flush FLAC file: " + path);
+        }
     }, nb::arg("path"), nb::arg("data"), nb::arg("sample_rate"),
        nb::arg("bit_depth") = 16,
     "Write audio data to a FLAC file. data is [channels, frames] float32.");
