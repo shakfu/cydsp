@@ -47,3 +47,4 @@ void bind_daisysp(nb::module_ &m);
 void bind_stk(nb::module_ &m);
 void bind_madronalib(nb::module_ &m);
 void bind_hisstools(nb::module_ &m);
+void bind_choc(nb::module_ &m);

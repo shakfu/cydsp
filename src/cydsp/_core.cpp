@@ -9,4 +9,5 @@ NB_MODULE(_core, m) {
     bind_stk(m);
     bind_madronalib(m);
     bind_hisstools(m);
+    bind_choc(m);
 }

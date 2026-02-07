@@ -1,7 +1,8 @@
-"""WAV file I/O for AudioBuffer.
+"""Audio file I/O for AudioBuffer.
 
-Uses only the stdlib ``wave`` module -- zero external dependencies.
-Supports reading 8/16/24/32-bit PCM and writing 16/24-bit PCM.
+Supported formats (detected by extension):
+  .wav  -- 8/16/24/32-bit PCM read, 16/24-bit PCM write (stdlib ``wave``)
+  .flac -- 16/24-bit read/write (CHOC FLAC codec, zero external dependencies)
 """
 
 from __future__ import annotations
@@ -115,3 +116,94 @@ def write_wav(
         wf.setsampwidth(sampwidth)
         wf.setframerate(sample_rate)
         wf.writeframes(raw_bytes)
+
+
+def read_flac(path: str | Path) -> AudioBuffer:
+    """Read a FLAC file and return an AudioBuffer.
+
+    Output is float32 normalized to [-1, 1].
+    """
+    from cydsp._core import choc
+
+    path = Path(path)
+    data, sample_rate = choc.read_flac(str(path))
+    return AudioBuffer(data, sample_rate=sample_rate)
+
+
+def write_flac(
+    path: str | Path,
+    buf: AudioBuffer,
+    bit_depth: int = 16,
+) -> None:
+    """Write an AudioBuffer to a FLAC file.
+
+    Parameters
+    ----------
+    path : str or Path
+        Output file path.
+    buf : AudioBuffer
+        Audio data to write.
+    bit_depth : int
+        Output bit depth: 16 or 24.
+    """
+    from cydsp._core import choc
+
+    if bit_depth not in (16, 24):
+        raise ValueError(f"Unsupported bit_depth: {bit_depth} (use 16 or 24)")
+
+    path = Path(path)
+    data = buf.data.copy()
+    np.clip(data, -1.0, 1.0, out=data)
+    choc.write_flac(str(path), data, buf.sample_rate, bit_depth)
+
+
+_FORMAT_READERS = {
+    ".wav": read_wav,
+    ".flac": read_flac,
+}
+
+_FORMAT_WRITERS = {
+    ".wav": write_wav,
+    ".flac": write_flac,
+}
+
+
+def read(path: str | Path) -> AudioBuffer:
+    """Read an audio file and return an AudioBuffer.
+
+    Format is detected by file extension (.wav, .flac).
+    """
+    path = Path(path)
+    ext = path.suffix.lower()
+    reader = _FORMAT_READERS.get(ext)
+    if reader is None:
+        supported = ", ".join(sorted(_FORMAT_READERS))
+        raise ValueError(f"Unsupported audio format '{ext}'. Supported: {supported}")
+    return reader(path)
+
+
+def write(
+    path: str | Path,
+    buf: AudioBuffer,
+    bit_depth: int = 16,
+) -> None:
+    """Write an AudioBuffer to an audio file.
+
+    Format is detected by file extension (.wav, .flac).
+
+    Parameters
+    ----------
+    path : str or Path
+        Output file path.
+    buf : AudioBuffer
+        Audio data to write.
+    bit_depth : int
+        Output bit depth: 16 or 24.
+    """
+    path = Path(path)
+    ext = path.suffix.lower()
+    writer = _FORMAT_WRITERS.get(ext)
+    if writer is None:
+        supported = ", ".join(sorted(_FORMAT_WRITERS))
+        raise ValueError(f"Unsupported audio format '{ext}'. Supported: {supported}")
+    writer(path, buf, bit_depth=bit_depth)

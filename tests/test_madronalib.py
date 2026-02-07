@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-import cydsp
+from cydsp._core import madronalib
 
-ml = cydsp.madronalib
+ml = madronalib
 
 
 # ============================================================================
@@ -407,11 +407,24 @@ class TestProjections:
     def test_all_projections_callable(self):
         """Every projection should be callable with scalar 0.5."""
         names = [
-            "smoothstep", "bell", "ease_in", "ease_out", "ease_in_out",
-            "ease_in_cubic", "ease_out_cubic", "ease_in_out_cubic",
-            "ease_in_quartic", "ease_out_quartic", "ease_in_out_quartic",
-            "overshoot", "flip", "squared", "flatcenter",
-            "bisquared", "inv_bisquared", "clip",
+            "smoothstep",
+            "bell",
+            "ease_in",
+            "ease_out",
+            "ease_in_out",
+            "ease_in_cubic",
+            "ease_out_cubic",
+            "ease_in_out_cubic",
+            "ease_in_quartic",
+            "ease_out_quartic",
+            "ease_in_out_quartic",
+            "overshoot",
+            "flip",
+            "squared",
+            "flatcenter",
+            "bisquared",
+            "inv_bisquared",
+            "clip",
         ]
         for name in names:
             fn = getattr(ml.projections, name)
@@ -478,8 +491,14 @@ class TestWindows:
         assert w[32] == pytest.approx(1.0)
 
     def test_all_windows_callable(self):
-        names = ["hamming", "blackman", "flat_top", "triangle",
-                 "raised_cosine", "rectangle"]
+        names = [
+            "hamming",
+            "blackman",
+            "flat_top",
+            "triangle",
+            "raised_cosine",
+            "rectangle",
+        ]
         for name in names:
             fn = getattr(ml.windows, name)
             w = fn(64)

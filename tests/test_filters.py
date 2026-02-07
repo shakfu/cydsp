@@ -1,7 +1,7 @@
 """Tests for cydsp.filters module (signalsmith biquad filters)."""
 
 import numpy as np
-import cydsp
+from cydsp._core import filters
 
 
 def make_impulse(n=1024):
@@ -18,16 +18,16 @@ def make_sine(freq, n=4096, sr=48000.0):
 
 class TestBiquadConstruction:
     def test_default_construction(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         assert bq is not None
 
     def test_lowpass_returns_self(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         result = bq.lowpass(0.1)
         assert result is bq
 
     def test_chaining(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         result = bq.lowpass(0.1).add_gain(0.5)
         assert result is bq
 
@@ -36,80 +36,80 @@ class TestBiquadFilterTypes:
     """Verify each filter type can be configured and processes without error."""
 
     def test_lowpass(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.1)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
         assert out.dtype == np.float32
 
     def test_lowpass_q(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass_q(0.1, 0.707)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_highpass(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.highpass(0.1)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_bandpass(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.bandpass(0.25)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_notch(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.notch(0.25)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_peak(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.peak(0.25, 2.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_peak_db(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.peak_db(0.25, 6.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_high_shelf(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.high_shelf(0.25, 2.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_high_shelf_db(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.high_shelf_db(0.25, 6.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_low_shelf(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.low_shelf(0.25, 2.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_low_shelf_db(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.low_shelf_db(0.25, 6.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_allpass(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.allpass(0.25)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_allpass_q(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.allpass_q(0.25, 1.0)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
@@ -117,7 +117,7 @@ class TestBiquadFilterTypes:
 
 class TestBiquadBehavior:
     def test_lowpass_attenuates_high_frequencies(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.1)  # cutoff at 0.1 * Nyquist
         # Response well below cutoff should be near 0 dB
         low_resp = bq.response_db(0.01)
@@ -128,7 +128,7 @@ class TestBiquadBehavior:
         assert high_resp < -10.0  # significant attenuation
 
     def test_highpass_attenuates_low_frequencies(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.highpass(0.3)
         low_resp = bq.response_db(0.01)
         high_resp = bq.response_db(0.45)
@@ -136,7 +136,7 @@ class TestBiquadBehavior:
         assert low_resp < -10.0
 
     def test_notch_attenuates_at_center(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.notch(0.25, 1.0)
         center_resp = bq.response_db(0.25)
         off_resp = bq.response_db(0.1)
@@ -144,7 +144,7 @@ class TestBiquadBehavior:
         assert abs(off_resp) < 3.0
 
     def test_allpass_unity_magnitude(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.allpass(0.25)
         for freq in [0.05, 0.1, 0.2, 0.3, 0.4]:
             resp = bq.response(freq)
@@ -152,14 +152,14 @@ class TestBiquadBehavior:
             assert abs(mag - 1.0) < 0.01, f"Allpass magnitude at {freq}: {mag}"
 
     def test_peak_boost(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.peak_db(0.25, 12.0)
         center_resp = bq.response_db(0.25)
         # Should be close to +12 dB at center
         assert center_resp > 10.0
 
     def test_reset_clears_state(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.1)
         # Process some signal to build up state
         bq.process(np.ones(100, dtype=np.float32))
@@ -172,7 +172,7 @@ class TestBiquadBehavior:
 
 class TestBiquadBlockProcessing:
     def test_process_returns_correct_shape(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.2)
         inp = np.random.randn(512).astype(np.float32)
         out = bq.process(inp)
@@ -180,7 +180,7 @@ class TestBiquadBlockProcessing:
         assert out.dtype == np.float32
 
     def test_process_inplace(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.2)
         data = np.ones(64, dtype=np.float32)
         bq.process_inplace(data)
@@ -188,9 +188,9 @@ class TestBiquadBlockProcessing:
         assert not np.allclose(data, np.ones(64, dtype=np.float32))
 
     def test_process_matches_sample_by_sample(self):
-        bq1 = cydsp.filters.Biquad()
+        bq1 = filters.Biquad()
         bq1.lowpass(0.15)
-        bq2 = cydsp.filters.Biquad()
+        bq2 = filters.Biquad()
         bq2.lowpass(0.15)
 
         inp = np.random.randn(256).astype(np.float32)
@@ -206,19 +206,19 @@ class TestBiquadBlockProcessing:
 
 class TestBiquadDesign:
     def test_design_enum_values(self):
-        assert cydsp.filters.BiquadDesign.bilinear is not None
-        assert cydsp.filters.BiquadDesign.cookbook is not None
-        assert cydsp.filters.BiquadDesign.one_sided is not None
-        assert cydsp.filters.BiquadDesign.vicanek is not None
+        assert filters.BiquadDesign.bilinear is not None
+        assert filters.BiquadDesign.cookbook is not None
+        assert filters.BiquadDesign.one_sided is not None
+        assert filters.BiquadDesign.vicanek is not None
 
     def test_vicanek_design(self):
-        bq = cydsp.filters.Biquad()
-        bq.lowpass(0.1, design=cydsp.filters.BiquadDesign.vicanek)
+        bq = filters.Biquad()
+        bq.lowpass(0.1, design=filters.BiquadDesign.vicanek)
         out = bq.process(make_impulse())
         assert out.shape == (1024,)
 
     def test_add_gain(self):
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.2)
         resp_before = bq.response_db(0.05)
         bq.add_gain_db(6.0)

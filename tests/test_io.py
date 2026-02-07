@@ -1,4 +1,4 @@
-"""Tests for cydsp.io module (WAV file I/O)."""
+"""Tests for cydsp.io module (WAV and FLAC file I/O)."""
 
 import struct
 import wave
@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from cydsp.buffer import AudioBuffer
-from cydsp.io import read_wav, write_wav
+from cydsp.io import read, read_flac, read_wav, write, write_flac, write_wav
 
 
 @pytest.fixture
@@ -184,3 +184,121 @@ class TestEdgeCases:
         write_wav(p, buf)
         recovered = read_wav(p)
         assert recovered.frames == 256
+
+
+# ---------------------------------------------------------------------------
+# FLAC tests
+# ---------------------------------------------------------------------------
+
+
+class TestReadFlac:
+    def test_16bit_roundtrip(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, channels=1, frames=1024, sample_rate=48000.0)
+        p = tmp_path / "out16.flac"
+        write_flac(p, buf, bit_depth=16)
+        recovered = read_flac(p)
+        assert recovered.channels == 1
+        assert recovered.frames == 1024
+        assert recovered.sample_rate == 48000.0
+        # 16-bit quantization error
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 32768 + 1e-4)
+
+    def test_24bit_roundtrip(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, channels=1, frames=1024, sample_rate=48000.0)
+        p = tmp_path / "out24.flac"
+        write_flac(p, buf, bit_depth=24)
+        recovered = read_flac(p)
+        # 24-bit has finer resolution
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 8388608 + 1e-5)
+
+    def test_stereo_roundtrip(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, channels=2, frames=512, sample_rate=44100.0)
+        p = tmp_path / "stereo.flac"
+        write_flac(p, buf, bit_depth=16)
+        recovered = read_flac(p)
+        assert recovered.channels == 2
+        assert recovered.frames == 512
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 32768 + 1e-4)
+
+    def test_clipping(self, tmp_path):
+        data = np.array([[2.0, -2.0, 0.5]], dtype=np.float32)
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        p = tmp_path / "clip.flac"
+        write_flac(p, buf, bit_depth=16)
+        recovered = read_flac(p)
+        assert recovered.data[0, 0] > 0.99
+        assert recovered.data[0, 1] < -0.99
+        np.testing.assert_allclose(recovered.data[0, 2], 0.5, atol=0.001)
+
+    def test_invalid_bit_depth_raises(self, tmp_path):
+        buf = AudioBuffer.zeros(1, 64, sample_rate=48000.0)
+        with pytest.raises(ValueError, match="bit_depth"):
+            write_flac(tmp_path / "bad.flac", buf, bit_depth=8)
+
+    def test_path_object(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=256, sample_rate=48000.0)
+        p = tmp_path / "pathobj.flac"
+        write_flac(p, buf)
+        recovered = read_flac(p)
+        assert recovered.frames == 256
+
+    def test_string_path(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=256, sample_rate=48000.0)
+        p = str(tmp_path / "strpath.flac")
+        write_flac(p, buf)
+        recovered = read_flac(p)
+        assert recovered.frames == 256
+
+    def test_nonexistent_file_raises(self, tmp_path):
+        with pytest.raises(RuntimeError):
+            read_flac(tmp_path / "nonexistent.flac")
+
+    def test_multichannel(self, tmp_path):
+        data = np.random.default_rng(42).uniform(-0.5, 0.5, (4, 256)).astype(np.float32)
+        buf = AudioBuffer(data, sample_rate=96000.0)
+        p = tmp_path / "multi.flac"
+        write_flac(p, buf, bit_depth=24)
+        recovered = read_flac(p)
+        assert recovered.channels == 4
+        assert recovered.frames == 256
+        assert recovered.sample_rate == 96000.0
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 8388608 + 1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Generic read/write dispatch tests
+# ---------------------------------------------------------------------------
+
+
+class TestGenericReadWrite:
+    def test_wav_dispatch(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=256, sample_rate=48000.0)
+        p = tmp_path / "test.wav"
+        write(p, buf)
+        recovered = read(p)
+        assert recovered.frames == 256
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 32768 + 1e-4)
+
+    def test_flac_dispatch(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=256, sample_rate=48000.0)
+        p = tmp_path / "test.flac"
+        write(p, buf)
+        recovered = read(p)
+        assert recovered.frames == 256
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 32768 + 1e-4)
+
+    def test_unsupported_extension_read_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="Unsupported"):
+            read(tmp_path / "test.mp3")
+
+    def test_unsupported_extension_write_raises(self, tmp_path):
+        buf = AudioBuffer.zeros(1, 64, sample_rate=48000.0)
+        with pytest.raises(ValueError, match="Unsupported"):
+            write(tmp_path / "test.ogg", buf)
+
+    def test_case_insensitive_extension(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=128, sample_rate=48000.0)
+        p = tmp_path / "test.FLAC"
+        write(p, buf)
+        recovered = read(p)
+        assert recovered.frames == 128

@@ -2,28 +2,28 @@
 
 import numpy as np
 import pytest
-import cydsp
+from cydsp._core import fft as fft_mod
 
 
 class TestFFTConstruction:
     def test_default_construction(self):
-        fft = cydsp.fft.FFT(64)
-        assert fft.size() == 64
+        f = fft_mod.FFT(64)
+        assert f.size() == 64
 
     def test_set_size(self):
-        fft = cydsp.fft.FFT(64)
-        fft.set_size(128)
-        assert fft.size() == 128
+        f = fft_mod.FFT(64)
+        f.set_size(128)
+        assert f.size() == 128
 
     def test_fast_size_above(self):
         # Should return a size >= input that is efficient for the FFT
-        result = cydsp.fft.FFT.fast_size_above(100)
+        result = fft_mod.FFT.fast_size_above(100)
         assert result >= 100
         # Verify it's a power-of-2-based fast size
         assert result == 128
 
     def test_fast_size_below(self):
-        result = cydsp.fft.FFT.fast_size_below(100)
+        result = fft_mod.FFT.fast_size_below(100)
         assert result <= 100
         # 96 = 32 * 3 = 2^5 * 3^1
         assert result == 96
@@ -31,59 +31,59 @@ class TestFFTConstruction:
 
 class TestComplexFFT:
     def test_fft_shape(self):
-        fft = cydsp.fft.FFT(128)
+        f = fft_mod.FFT(128)
         inp = np.zeros(128, dtype=np.complex64)
         inp[0] = 1.0
-        out = fft.fft(inp)
+        out = f.fft(inp)
         assert out.shape == (128,)
         assert out.dtype == np.complex64
 
     def test_ifft_shape(self):
-        fft = cydsp.fft.FFT(128)
+        f = fft_mod.FFT(128)
         inp = np.ones(128, dtype=np.complex64)
-        out = fft.ifft(inp)
+        out = f.ifft(inp)
         assert out.shape == (128,)
         assert out.dtype == np.complex64
 
     def test_impulse_has_flat_spectrum(self):
         n = 256
-        fft = cydsp.fft.FFT(n)
+        f = fft_mod.FFT(n)
         inp = np.zeros(n, dtype=np.complex64)
         inp[0] = 1.0
-        out = fft.fft(inp)
+        out = f.fft(inp)
         # Impulse FFT should have magnitude ~1 at all bins
         magnitudes = np.abs(out)
         np.testing.assert_allclose(magnitudes, 1.0, atol=1e-5)
 
     def test_dc_signal(self):
         n = 64
-        fft = cydsp.fft.FFT(n)
+        f = fft_mod.FFT(n)
         inp = np.ones(n, dtype=np.complex64)
-        out = fft.fft(inp)
+        out = f.fft(inp)
         # DC bin should be n, all others 0
         assert abs(out[0] - n) < 1e-3
         np.testing.assert_allclose(np.abs(out[1:]), 0.0, atol=1e-3)
 
     def test_roundtrip(self):
         n = 256
-        fft = cydsp.fft.FFT(n)
+        f = fft_mod.FFT(n)
         rng = np.random.default_rng(42)
         inp = (rng.standard_normal(n) + 1j * rng.standard_normal(n)).astype(
             np.complex64
         )
-        spectrum = fft.fft(inp)
-        recovered = fft.ifft(spectrum)
+        spectrum = f.fft(inp)
+        recovered = f.ifft(spectrum)
         # IFFT is unscaled, so result = inp * N
         np.testing.assert_allclose(recovered / n, inp, atol=1e-4)
 
     def test_single_tone(self):
         n = 128
-        fft = cydsp.fft.FFT(n)
+        f = fft_mod.FFT(n)
         k = 5  # bin index
         t = np.arange(n, dtype=np.float32)
         # Complex exponential at bin k
         inp = np.exp(2j * np.pi * k * t / n).astype(np.complex64)
-        out = fft.fft(inp)
+        out = f.fft(inp)
         magnitudes = np.abs(out)
         # Bin k should have magnitude ~n, others ~0
         assert magnitudes[k] > n * 0.99
@@ -91,41 +91,41 @@ class TestComplexFFT:
         np.testing.assert_allclose(others, 0.0, atol=0.5)
 
     def test_wrong_size_raises(self):
-        fft = cydsp.fft.FFT(64)
+        f = fft_mod.FFT(64)
         inp = np.zeros(32, dtype=np.complex64)
         with pytest.raises(ValueError):
-            fft.fft(inp)
+            f.fft(inp)
 
     def test_wrong_size_ifft_raises(self):
-        fft = cydsp.fft.FFT(64)
+        f = fft_mod.FFT(64)
         inp = np.zeros(32, dtype=np.complex64)
         with pytest.raises(ValueError):
-            fft.ifft(inp)
+            f.ifft(inp)
 
 
 class TestRealFFTConstruction:
     def test_construction(self):
-        rfft = cydsp.fft.RealFFT(256)
+        rfft = fft_mod.RealFFT(256)
         assert rfft.size() == 256
 
     def test_set_size(self):
-        rfft = cydsp.fft.RealFFT(256)
+        rfft = fft_mod.RealFFT(256)
         rfft.set_size(512)
         assert rfft.size() == 512
 
     def test_fast_size_above(self):
-        result = cydsp.fft.RealFFT.fast_size_above(100)
+        result = fft_mod.RealFFT.fast_size_above(100)
         assert result >= 100
 
     def test_fast_size_below(self):
-        result = cydsp.fft.RealFFT.fast_size_below(100)
+        result = fft_mod.RealFFT.fast_size_below(100)
         assert result <= 100
 
 
 class TestRealFFT:
     def test_fft_shape(self):
         n = 256
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         inp = np.zeros(n, dtype=np.float32)
         inp[0] = 1.0
         out = rfft.fft(inp)
@@ -134,7 +134,7 @@ class TestRealFFT:
 
     def test_ifft_shape(self):
         n = 256
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         inp = np.zeros(n // 2, dtype=np.complex64)
         out = rfft.ifft(inp)
         assert out.shape == (n,)
@@ -142,7 +142,7 @@ class TestRealFFT:
 
     def test_impulse_flat_spectrum(self):
         n = 256
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         inp = np.zeros(n, dtype=np.float32)
         inp[0] = 1.0
         out = rfft.fft(inp)
@@ -153,7 +153,7 @@ class TestRealFFT:
 
     def test_dc_signal(self):
         n = 128
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         inp = np.ones(n, dtype=np.float32)
         out = rfft.fft(inp)
         # DC bin (index 0) should be n
@@ -163,7 +163,7 @@ class TestRealFFT:
 
     def test_roundtrip(self):
         n = 256
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         rng = np.random.default_rng(42)
         inp = rng.standard_normal(n).astype(np.float32)
         spectrum = rfft.fft(inp)
@@ -173,7 +173,7 @@ class TestRealFFT:
 
     def test_sine_peak(self):
         n = 256
-        rfft = cydsp.fft.RealFFT(n)
+        rfft = fft_mod.RealFFT(n)
         k = 10  # bin index
         t = np.arange(n, dtype=np.float32)
         inp = np.sin(2 * np.pi * k * t / n).astype(np.float32)
@@ -184,13 +184,13 @@ class TestRealFFT:
         assert peak_bin == k
 
     def test_wrong_size_raises(self):
-        rfft = cydsp.fft.RealFFT(256)
+        rfft = fft_mod.RealFFT(256)
         inp = np.zeros(128, dtype=np.float32)
         with pytest.raises(ValueError):
             rfft.fft(inp)
 
     def test_wrong_bins_ifft_raises(self):
-        rfft = cydsp.fft.RealFFT(256)
+        rfft = fft_mod.RealFFT(256)
         inp = np.zeros(64, dtype=np.complex64)
         with pytest.raises(ValueError):
             rfft.ifft(inp)

@@ -1,20 +1,20 @@
 """Tests for cydsp.rates module (signalsmith oversampling)."""
 
 import numpy as np
-import cydsp
+from cydsp._core import rates
 
 
 class TestOversampler2xConstruction:
     def test_construction(self):
-        os = cydsp.rates.Oversampler2x(1, 256)
+        os = rates.Oversampler2x(1, 256)
         assert os is not None
 
     def test_multichannel(self):
-        os = cydsp.rates.Oversampler2x(4, 128)
+        os = rates.Oversampler2x(4, 128)
         assert os is not None
 
     def test_latency(self):
-        os = cydsp.rates.Oversampler2x(1, 256)
+        os = rates.Oversampler2x(1, 256)
         lat = os.latency()
         assert isinstance(lat, (int, float))
         assert lat >= 0
@@ -22,7 +22,7 @@ class TestOversampler2xConstruction:
 
 class TestOversampler2xUp:
     def test_up_shape(self):
-        os = cydsp.rates.Oversampler2x(1, 128)
+        os = rates.Oversampler2x(1, 128)
         inp = np.zeros((1, 64), dtype=np.float32)
         inp[0, 0] = 1.0
         out = os.up(inp)
@@ -30,7 +30,7 @@ class TestOversampler2xUp:
         assert out.dtype == np.float32
 
     def test_up_multichannel(self):
-        os = cydsp.rates.Oversampler2x(2, 128)
+        os = rates.Oversampler2x(2, 128)
         inp = np.zeros((2, 64), dtype=np.float32)
         inp[0, 0] = 1.0
         inp[1, 0] = -1.0
@@ -38,7 +38,7 @@ class TestOversampler2xUp:
         assert out.shape == (2, 128)
 
     def test_up_preserves_energy(self):
-        os = cydsp.rates.Oversampler2x(1, 256)
+        os = rates.Oversampler2x(1, 256)
         rng = np.random.default_rng(42)
         inp = rng.standard_normal((1, 128)).astype(np.float32)
         out = os.up(inp)
@@ -49,7 +49,7 @@ class TestOversampler2xUp:
 
 class TestOversampler2xDown:
     def test_down_shape(self):
-        os = cydsp.rates.Oversampler2x(1, 128)
+        os = rates.Oversampler2x(1, 128)
         # First upsample, then downsample
         inp = np.zeros((1, 64), dtype=np.float32)
         inp[0, 0] = 1.0
@@ -61,21 +61,21 @@ class TestOversampler2xDown:
 
 class TestOversampler2xProcess:
     def test_process_shape(self):
-        os = cydsp.rates.Oversampler2x(1, 128)
+        os = rates.Oversampler2x(1, 128)
         inp = np.zeros((1, 64), dtype=np.float32)
         out = os.process(inp)
         assert out.shape == (1, 64)  # same as input
         assert out.dtype == np.float32
 
     def test_process_multichannel(self):
-        os = cydsp.rates.Oversampler2x(2, 128)
+        os = rates.Oversampler2x(2, 128)
         inp = np.zeros((2, 64), dtype=np.float32)
         out = os.process(inp)
         assert out.shape == (2, 64)
 
     def test_roundtrip_near_unity(self):
         """Up+down roundtrip of low-freq signal should be near-unity (accounting for latency)."""
-        os = cydsp.rates.Oversampler2x(1, 256)
+        os = rates.Oversampler2x(1, 256)
         # Low-frequency sine (well below Nyquist) should survive round-trip
         t = np.arange(256, dtype=np.float32)
         sine = np.sin(2 * np.pi * 0.01 * t).astype(np.float32)
@@ -91,7 +91,7 @@ class TestOversampler2xProcess:
         assert np.max(np.abs(out)) > 0.5
 
     def test_reset(self):
-        os = cydsp.rates.Oversampler2x(1, 128)
+        os = rates.Oversampler2x(1, 128)
         inp = np.ones((1, 64), dtype=np.float32)
         os.process(inp)
         os.reset()

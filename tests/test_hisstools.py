@@ -35,10 +35,14 @@ class TestWindows:
     def test_all_simple_windows_callable(self):
         """All simple window functions return correct-sized arrays."""
         fns = [
-            hisstools.windows.rect, hisstools.windows.triangle,
-            hisstools.windows.welch, hisstools.windows.parzen,
-            hisstools.windows.sine, hisstools.windows.hann,
-            hisstools.windows.hamming, hisstools.windows.blackman,
+            hisstools.windows.rect,
+            hisstools.windows.triangle,
+            hisstools.windows.welch,
+            hisstools.windows.parzen,
+            hisstools.windows.sine,
+            hisstools.windows.hann,
+            hisstools.windows.hamming,
+            hisstools.windows.blackman,
             hisstools.windows.exact_blackman,
             hisstools.windows.blackman_harris_62dB,
             hisstools.windows.blackman_harris_71dB,

@@ -448,10 +448,10 @@ class TestPipe:
         npt.assert_allclose(result.data, buf.data, rtol=1e-5)
 
     def test_integration_with_dsp_functions(self):
-        from cydsp import dsp
+        from cydsp import effects
 
         buf = AudioBuffer.sine(1000.0, frames=4096, sample_rate=48000.0)
-        result = buf.pipe(dsp.lowpass, 5000.0)
+        result = buf.pipe(effects.lowpass, 5000.0)
         assert isinstance(result, AudioBuffer)
         assert result.frames == 4096
 
@@ -482,38 +482,38 @@ class TestValidationHelpers:
 
 class TestIntegrationWithModules:
     def test_filters_biquad(self):
-        import cydsp
+        from cydsp._core import filters
 
         buf = AudioBuffer.impulse(channels=1, frames=1024, sample_rate=48000)
-        bq = cydsp.filters.Biquad()
+        bq = filters.Biquad()
         bq.lowpass(0.1)
         filtered = bq.process(buf[0])
         assert filtered.shape == (1024,)
         assert filtered.dtype == np.float32
 
     def test_fft_realfft(self):
-        import cydsp
+        from cydsp._core import fft
 
         buf = AudioBuffer.sine(1000.0, frames=1024, sample_rate=48000)
-        fft_obj = cydsp.fft.RealFFT(1024)
+        fft_obj = fft.RealFFT(1024)
         spectrum = fft_obj.fft(buf[0])
         assert spectrum.dtype == np.complex64
         assert spectrum.shape == (512,)
 
     def test_rates_oversampler(self):
-        import cydsp
+        from cydsp._core import rates
 
         buf = AudioBuffer.sine(440.0, channels=2, frames=256, sample_rate=48000)
-        os = cydsp.rates.Oversampler2x(2, 256)
+        os = rates.Oversampler2x(2, 256)
         up = os.up(buf.data)
         assert up.shape == (2, 512)
 
     def test_spectral_stft(self):
-        import cydsp
+        from cydsp._core import spectral
 
         ws = 256
         buf = AudioBuffer.sine(1000.0, channels=1, frames=ws, sample_rate=48000)
-        stft = cydsp.spectral.STFT(1, ws, ws)
+        stft = spectral.STFT(1, ws, ws)
         stft.analyse(buf.data)
         spec = stft.get_spectrum()
         assert spec.dtype == np.complex64

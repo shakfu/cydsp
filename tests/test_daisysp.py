@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import cydsp
+from cydsp._core import daisysp
 
 SR = 48000.0
 
@@ -14,56 +14,56 @@ SR = 48000.0
 
 class TestOscillator:
     def test_construction_and_init(self):
-        osc = cydsp.daisysp.oscillators.Oscillator()
+        osc = daisysp.oscillators.Oscillator()
         osc.init(SR)
 
     def test_waveform_constants(self):
-        m = cydsp.daisysp.oscillators
+        m = daisysp.oscillators
         assert isinstance(m.WAVE_SIN, int)
         assert isinstance(m.WAVE_TRI, int)
         assert isinstance(m.WAVE_SAW, int)
         assert isinstance(m.WAVE_SQUARE, int)
 
     def test_process_shape_dtype(self):
-        osc = cydsp.daisysp.oscillators.Oscillator()
+        osc = daisysp.oscillators.Oscillator()
         osc.init(SR)
         osc.set_freq(440.0)
         osc.set_amp(1.0)
-        osc.set_waveform(cydsp.daisysp.oscillators.WAVE_SIN)
+        osc.set_waveform(daisysp.oscillators.WAVE_SIN)
         out = osc.process(1024)
         assert out.shape == (1024,)
         assert out.dtype == np.float32
 
     def test_sine_range(self):
-        osc = cydsp.daisysp.oscillators.Oscillator()
+        osc = daisysp.oscillators.Oscillator()
         osc.init(SR)
         osc.set_freq(440.0)
         osc.set_amp(1.0)
-        osc.set_waveform(cydsp.daisysp.oscillators.WAVE_SIN)
+        osc.set_waveform(daisysp.oscillators.WAVE_SIN)
         out = osc.process(4096)
         assert np.max(np.abs(out)) > 0.9
         assert np.max(np.abs(out)) <= 1.01
 
     def test_process_sample(self):
-        osc = cydsp.daisysp.oscillators.Oscillator()
+        osc = daisysp.oscillators.Oscillator()
         osc.init(SR)
         osc.set_freq(440.0)
         osc.set_amp(1.0)
-        osc.set_waveform(cydsp.daisysp.oscillators.WAVE_SIN)
+        osc.set_waveform(daisysp.oscillators.WAVE_SIN)
         val = osc.process_sample()
         assert isinstance(val, float)
 
     def test_zero_amp_produces_silence(self):
-        osc = cydsp.daisysp.oscillators.Oscillator()
+        osc = daisysp.oscillators.Oscillator()
         osc.init(SR)
         osc.set_freq(440.0)
         osc.set_amp(0.0)
-        osc.set_waveform(cydsp.daisysp.oscillators.WAVE_SIN)
+        osc.set_waveform(daisysp.oscillators.WAVE_SIN)
         out = osc.process(512)
         assert np.max(np.abs(out)) < 1e-6
 
     def test_all_waveforms(self):
-        m = cydsp.daisysp.oscillators
+        m = daisysp.oscillators
         for wf in [
             m.WAVE_SIN,
             m.WAVE_TRI,
@@ -85,7 +85,7 @@ class TestOscillator:
 
 class TestFm2:
     def test_produces_output(self):
-        fm = cydsp.daisysp.oscillators.Fm2()
+        fm = daisysp.oscillators.Fm2()
         fm.init(SR)
         fm.set_frequency(440.0)
         fm.set_ratio(2.0)
@@ -97,7 +97,7 @@ class TestFm2:
 
 class TestFormantOscillator:
     def test_produces_output(self):
-        fo = cydsp.daisysp.oscillators.FormantOscillator()
+        fo = daisysp.oscillators.FormantOscillator()
         fo.init(SR)
         fo.set_carrier_freq(220.0)
         fo.set_formant_freq(800.0)
@@ -108,7 +108,7 @@ class TestFormantOscillator:
 
 class TestHarmonicOscillator:
     def test_produces_output(self):
-        ho = cydsp.daisysp.oscillators.HarmonicOscillator()
+        ho = daisysp.oscillators.HarmonicOscillator()
         ho.init(SR)
         ho.set_freq(440.0)
         amps = np.ones(16, dtype=np.float32)
@@ -120,7 +120,7 @@ class TestHarmonicOscillator:
 
 class TestOscillatorBank:
     def test_produces_output(self):
-        ob = cydsp.daisysp.oscillators.OscillatorBank()
+        ob = daisysp.oscillators.OscillatorBank()
         ob.init(SR)
         ob.set_freq(220.0)
         ob.set_gain(1.0)
@@ -133,7 +133,7 @@ class TestOscillatorBank:
 
 class TestVariableSawOscillator:
     def test_produces_output(self):
-        v = cydsp.daisysp.oscillators.VariableSawOscillator()
+        v = daisysp.oscillators.VariableSawOscillator()
         v.init(SR)
         v.set_freq(440.0)
         v.set_pw(0.5)
@@ -145,7 +145,7 @@ class TestVariableSawOscillator:
 
 class TestVariableShapeOscillator:
     def test_produces_output(self):
-        v = cydsp.daisysp.oscillators.VariableShapeOscillator()
+        v = daisysp.oscillators.VariableShapeOscillator()
         v.init(SR)
         v.set_freq(440.0)
         v.set_pw(0.5)
@@ -157,7 +157,7 @@ class TestVariableShapeOscillator:
 
 class TestVosimOscillator:
     def test_produces_output(self):
-        v = cydsp.daisysp.oscillators.VosimOscillator()
+        v = daisysp.oscillators.VosimOscillator()
         v.init(SR)
         v.set_freq(220.0)
         v.set_form1_freq(800.0)
@@ -170,7 +170,7 @@ class TestVosimOscillator:
 
 class TestZOscillator:
     def test_produces_output(self):
-        z = cydsp.daisysp.oscillators.ZOscillator()
+        z = daisysp.oscillators.ZOscillator()
         z.init(SR)
         z.set_freq(220.0)
         z.set_formant_freq(800.0)
@@ -183,11 +183,11 @@ class TestZOscillator:
 
 class TestBlOsc:
     def test_produces_output(self):
-        bl = cydsp.daisysp.oscillators.BlOsc()
+        bl = daisysp.oscillators.BlOsc()
         bl.init(SR)
         bl.set_freq(440.0)
         bl.set_amp(1.0)
-        bl.set_waveform(cydsp.daisysp.oscillators.BLOSC_WAVE_SAW)
+        bl.set_waveform(daisysp.oscillators.BLOSC_WAVE_SAW)
         out = bl.process(1024)
         assert out.shape == (1024,)
         assert np.max(np.abs(out)) > 0.01
@@ -200,7 +200,7 @@ class TestBlOsc:
 
 class TestSvf:
     def test_lowpass_attenuates_high(self):
-        svf = cydsp.daisysp.filters.Svf()
+        svf = daisysp.filters.Svf()
         svf.init(SR)
         svf.set_freq(1000.0)
         svf.set_res(0.0)
@@ -214,7 +214,7 @@ class TestSvf:
         assert np.sum(low**2) < np.sum(noise**2)
 
     def test_multi_output(self):
-        svf = cydsp.daisysp.filters.Svf()
+        svf = daisysp.filters.Svf()
         svf.init(SR)
         svf.set_freq(2000.0)
         svf.set_res(0.5)
@@ -222,7 +222,7 @@ class TestSvf:
         assert len(result) == 5  # (low, high, band, notch, peak)
 
     def test_all_outputs(self):
-        svf = cydsp.daisysp.filters.Svf()
+        svf = daisysp.filters.Svf()
         svf.init(SR)
         svf.set_freq(1000.0)
         svf.set_res(0.5)
@@ -235,7 +235,7 @@ class TestSvf:
             "process_notch",
             "process_peak",
         ]:
-            svf2 = cydsp.daisysp.filters.Svf()
+            svf2 = daisysp.filters.Svf()
             svf2.init(SR)
             svf2.set_freq(1000.0)
             svf2.set_res(0.5)
@@ -245,10 +245,10 @@ class TestSvf:
 
 class TestOnePole:
     def test_lowpass(self):
-        op = cydsp.daisysp.filters.OnePole()
+        op = daisysp.filters.OnePole()
         op.init()
         op.set_frequency(0.1)
-        op.set_filter_mode(cydsp.daisysp.filters.OnePoleFM.LOW_PASS)
+        op.set_filter_mode(daisysp.filters.OnePoleFM.LOW_PASS)
         np.random.seed(42)
         noise = np.random.randn(1024).astype(np.float32)
         out = op.process(noise)
@@ -258,7 +258,7 @@ class TestOnePole:
 
 class TestLadderFilter:
     def test_filter_modes(self):
-        modes = cydsp.daisysp.filters
+        modes = daisysp.filters
         lf = modes.LadderFilter()
         lf.init(SR)
         lf.set_freq(1000.0)
@@ -272,7 +272,7 @@ class TestLadderFilter:
 
 class TestSoap:
     def test_bandpass_bandreject(self):
-        sp = cydsp.daisysp.filters.Soap()
+        sp = daisysp.filters.Soap()
         sp.init(SR)
         sp.set_center_freq(1000.0)
         sp.set_filter_bandwidth(200.0)
@@ -283,7 +283,7 @@ class TestSoap:
 
 class TestLGPLFilters:
     def test_allpass(self):
-        ap = cydsp.daisysp.filters.Allpass(SR, 4096)
+        ap = daisysp.filters.Allpass(SR, 4096)
         ap.set_freq(0.5)
         ap.set_rev_time(1.0)
         np.random.seed(42)
@@ -292,7 +292,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_atone(self):
-        at = cydsp.daisysp.filters.ATone()
+        at = daisysp.filters.ATone()
         at.init(SR)
         at.set_freq(1000.0)
         assert at.get_freq() == pytest.approx(1000.0)
@@ -302,7 +302,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_daisy_biquad(self):
-        bq = cydsp.daisysp.filters.DaisyBiquad()
+        bq = daisysp.filters.DaisyBiquad()
         bq.init(SR)
         bq.set_cutoff(1000.0)
         bq.set_res(0.7)
@@ -312,7 +312,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_comb(self):
-        cb = cydsp.daisysp.filters.Comb(SR, 4096)
+        cb = daisysp.filters.Comb(SR, 4096)
         cb.set_freq(500.0)
         cb.set_rev_time(0.5)
         np.random.seed(42)
@@ -321,7 +321,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_mode(self):
-        md = cydsp.daisysp.filters.Mode()
+        md = daisysp.filters.Mode()
         md.init(SR)
         md.set_freq(1000.0)
         md.set_q(100.0)
@@ -331,7 +331,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_moog_ladder(self):
-        ml = cydsp.daisysp.filters.MoogLadder()
+        ml = daisysp.filters.MoogLadder()
         ml.init(SR)
         ml.set_freq(1000.0)
         ml.set_res(0.7)
@@ -341,7 +341,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_nlfilt(self):
-        nf = cydsp.daisysp.filters.NlFilt()
+        nf = daisysp.filters.NlFilt()
         nf.init()
         nf.set_coefficients(0.5, 0.5, 0.0, 0.0, 0.0)
         np.random.seed(42)
@@ -350,7 +350,7 @@ class TestLGPLFilters:
         assert out.shape == (512,)
 
     def test_tone(self):
-        tn = cydsp.daisysp.filters.Tone()
+        tn = daisysp.filters.Tone()
         tn.init(SR)
         tn.set_freq(1000.0)
         assert tn.get_freq() == pytest.approx(1000.0)
@@ -367,7 +367,7 @@ class TestLGPLFilters:
 
 class TestAutowah:
     def test_process(self):
-        aw = cydsp.daisysp.effects.Autowah()
+        aw = daisysp.effects.Autowah()
         aw.init(SR)
         aw.set_wah(0.5)
         aw.set_dry_wet(0.5)
@@ -379,7 +379,7 @@ class TestAutowah:
 
 class TestChorus:
     def test_mono(self):
-        ch = cydsp.daisysp.effects.Chorus()
+        ch = daisysp.effects.Chorus()
         ch.init(SR)
         ch.set_lfo_freq(1.0)
         ch.set_lfo_depth(0.5)
@@ -389,7 +389,7 @@ class TestChorus:
         assert out.shape == (1024,)
 
     def test_stereo(self):
-        ch = cydsp.daisysp.effects.Chorus()
+        ch = daisysp.effects.Chorus()
         ch.init(SR)
         ch.set_lfo_freq(1.0)
         ch.set_lfo_depth(0.5)
@@ -401,7 +401,7 @@ class TestChorus:
 
 class TestDecimator:
     def test_process(self):
-        dc = cydsp.daisysp.effects.Decimator()
+        dc = daisysp.effects.Decimator()
         dc.init()
         dc.set_downsample_factor(0.5)
         dc.set_bitcrush_factor(0.5)
@@ -413,7 +413,7 @@ class TestDecimator:
 
 class TestFlanger:
     def test_process(self):
-        fl = cydsp.daisysp.effects.Flanger()
+        fl = daisysp.effects.Flanger()
         fl.init(SR)
         fl.set_feedback(0.5)
         fl.set_lfo_depth(0.5)
@@ -425,7 +425,7 @@ class TestFlanger:
 
 class TestOverdrive:
     def test_drive(self):
-        od = cydsp.daisysp.effects.Overdrive()
+        od = daisysp.effects.Overdrive()
         od.init()
         od.set_drive(0.8)
         inp = np.sin(np.linspace(0, 100, 512)).astype(np.float32) * 0.5
@@ -436,7 +436,7 @@ class TestOverdrive:
 
 class TestPhaser:
     def test_process(self):
-        ph = cydsp.daisysp.effects.Phaser()
+        ph = daisysp.effects.Phaser()
         ph.init(SR)
         ph.set_lfo_freq(0.5)
         ph.set_lfo_depth(0.5)
@@ -448,7 +448,7 @@ class TestPhaser:
 
 class TestPitchShifter:
     def test_process(self):
-        ps = cydsp.daisysp.effects.PitchShifter()
+        ps = daisysp.effects.PitchShifter()
         ps.init(SR)
         ps.set_transposition(7.0)
         inp = np.sin(np.linspace(0, 100, 512)).astype(np.float32) * 0.5
@@ -458,7 +458,7 @@ class TestPitchShifter:
 
 class TestSampleRateReducer:
     def test_process(self):
-        srr = cydsp.daisysp.effects.SampleRateReducer()
+        srr = daisysp.effects.SampleRateReducer()
         srr.init()
         srr.set_freq(0.5)
         inp = np.sin(np.linspace(0, 100, 512)).astype(np.float32)
@@ -468,7 +468,7 @@ class TestSampleRateReducer:
 
 class TestTremolo:
     def test_process(self):
-        tr = cydsp.daisysp.effects.Tremolo()
+        tr = daisysp.effects.Tremolo()
         tr.init(SR)
         tr.set_freq(5.0)
         tr.set_depth(0.8)
@@ -479,7 +479,7 @@ class TestTremolo:
 
 class TestWavefolder:
     def test_process(self):
-        wf = cydsp.daisysp.effects.Wavefolder()
+        wf = daisysp.effects.Wavefolder()
         wf.init()
         wf.set_gain(2.0)
         inp = np.sin(np.linspace(0, 100, 512)).astype(np.float32)
@@ -489,7 +489,7 @@ class TestWavefolder:
 
 class TestBitcrush:
     def test_process(self):
-        bc = cydsp.daisysp.effects.Bitcrush()
+        bc = daisysp.effects.Bitcrush()
         bc.init(SR)
         bc.set_bit_depth(8)
         bc.set_crush_rate(SR / 4)
@@ -500,7 +500,7 @@ class TestBitcrush:
 
 class TestFold:
     def test_process(self):
-        fd = cydsp.daisysp.effects.Fold()
+        fd = daisysp.effects.Fold()
         fd.init()
         fd.set_increment(0.5)
         inp = np.sin(np.linspace(0, 100, 512)).astype(np.float32)
@@ -510,7 +510,7 @@ class TestFold:
 
 class TestReverbSc:
     def test_stereo(self):
-        rv = cydsp.daisysp.effects.ReverbSc()
+        rv = daisysp.effects.ReverbSc()
         rv.init(SR)
         rv.set_feedback(0.9)
         rv.set_lp_freq(10000.0)
@@ -524,7 +524,7 @@ class TestReverbSc:
         assert np.max(np.abs(out)) > 0.001
 
     def test_process_sample(self):
-        rv = cydsp.daisysp.effects.ReverbSc()
+        rv = daisysp.effects.ReverbSc()
         rv.init(SR)
         rv.set_feedback(0.8)
         rv.set_lp_freq(10000.0)
@@ -540,8 +540,8 @@ class TestReverbSc:
 
 class TestCrossFade:
     def test_linear(self):
-        cf = cydsp.daisysp.dynamics.CrossFade()
-        cf.init(cydsp.daisysp.dynamics.CROSSFADE_LIN)
+        cf = daisysp.dynamics.CrossFade()
+        cf.init(daisysp.dynamics.CROSSFADE_LIN)
         cf.set_pos(0.0)
         a = np.ones(100, dtype=np.float32)
         b = np.zeros(100, dtype=np.float32)
@@ -551,8 +551,8 @@ class TestCrossFade:
         assert np.allclose(out, 1.0, atol=0.05)
 
     def test_midpoint(self):
-        cf = cydsp.daisysp.dynamics.CrossFade()
-        cf.init(cydsp.daisysp.dynamics.CROSSFADE_LIN)
+        cf = daisysp.dynamics.CrossFade()
+        cf.init(daisysp.dynamics.CROSSFADE_LIN)
         cf.set_pos(0.5)
         val = cf.process_sample(1.0, 0.0)
         assert val == pytest.approx(0.5, abs=0.05)
@@ -560,7 +560,7 @@ class TestCrossFade:
 
 class TestLimiter:
     def test_limits(self):
-        lm = cydsp.daisysp.dynamics.Limiter()
+        lm = daisysp.dynamics.Limiter()
         lm.init()
         inp = np.array([0.0, 0.5, 1.0, 2.0, 5.0], dtype=np.float32)
         out = lm.process(inp, 1.0)
@@ -569,7 +569,7 @@ class TestLimiter:
 
 class TestBalance:
     def test_process(self):
-        bl = cydsp.daisysp.dynamics.Balance()
+        bl = daisysp.dynamics.Balance()
         bl.init(SR)
         bl.set_cutoff(1000.0)
         sig = np.sin(np.linspace(0, 100, 512)).astype(np.float32) * 0.5
@@ -580,7 +580,7 @@ class TestBalance:
 
 class TestCompressor:
     def test_process(self):
-        cp = cydsp.daisysp.dynamics.Compressor()
+        cp = daisysp.dynamics.Compressor()
         cp.init(SR)
         cp.set_ratio(4.0)
         cp.set_threshold(-20.0)
@@ -591,7 +591,7 @@ class TestCompressor:
         assert out.shape == (512,)
 
     def test_getters(self):
-        cp = cydsp.daisysp.dynamics.Compressor()
+        cp = daisysp.dynamics.Compressor()
         cp.init(SR)
         cp.set_ratio(4.0)
         cp.set_threshold(-20.0)
@@ -606,10 +606,10 @@ class TestCompressor:
 
 class TestAdEnv:
     def test_envelope(self):
-        ae = cydsp.daisysp.control.AdEnv()
+        ae = daisysp.control.AdEnv()
         ae.init(SR)
-        ae.set_time(cydsp.daisysp.control.ADENV_SEG_ATTACK, 0.01)
-        ae.set_time(cydsp.daisysp.control.ADENV_SEG_DECAY, 0.1)
+        ae.set_time(daisysp.control.ADENV_SEG_ATTACK, 0.01)
+        ae.set_time(daisysp.control.ADENV_SEG_DECAY, 0.1)
         ae.set_min(0.0)
         ae.set_max(1.0)
         ae.trigger()
@@ -620,7 +620,7 @@ class TestAdEnv:
 
 class TestAdsr:
     def test_envelope(self):
-        ad = cydsp.daisysp.control.Adsr()
+        ad = daisysp.control.Adsr()
         ad.init(SR)
         ad.set_attack_time(0.01)
         ad.set_decay_time(0.05)
@@ -633,7 +633,7 @@ class TestAdsr:
         assert np.max(out) > 0.5
 
     def test_segment(self):
-        ad = cydsp.daisysp.control.Adsr()
+        ad = daisysp.control.Adsr()
         ad.init(SR)
         seg = ad.get_current_segment()
         assert isinstance(seg, int)
@@ -641,7 +641,7 @@ class TestAdsr:
 
 class TestPhasor:
     def test_ramp(self):
-        ph = cydsp.daisysp.control.Phasor()
+        ph = daisysp.control.Phasor()
         ph.init(SR, 1.0)
         out = ph.process(int(SR))  # 1 second = 1 full cycle
         assert out.shape == (int(SR),)
@@ -652,7 +652,7 @@ class TestPhasor:
 
 class TestLine:
     def test_ramp(self):
-        ln = cydsp.daisysp.control.Line()
+        ln = daisysp.control.Line()
         ln.init(SR)
         ln.start(0.0, 1.0, 0.1)
         samples, finished = ln.process(int(SR * 0.2))
@@ -667,7 +667,7 @@ class TestLine:
 
 class TestWhiteNoise:
     def test_output(self):
-        wn = cydsp.daisysp.noise.WhiteNoise()
+        wn = daisysp.noise.WhiteNoise()
         wn.init()
         wn.set_amp(1.0)
         out = wn.process(4096)
@@ -676,7 +676,7 @@ class TestWhiteNoise:
         assert np.std(out) > 0.1  # should have significant variance
 
     def test_zero_amp(self):
-        wn = cydsp.daisysp.noise.WhiteNoise()
+        wn = daisysp.noise.WhiteNoise()
         wn.init()
         wn.set_amp(0.0)
         out = wn.process(512)
@@ -685,7 +685,7 @@ class TestWhiteNoise:
 
 class TestDust:
     def test_output(self):
-        du = cydsp.daisysp.noise.Dust()
+        du = daisysp.noise.Dust()
         du.init()
         du.set_density(0.5)
         out = du.process(4096)
@@ -694,7 +694,7 @@ class TestDust:
 
 class TestClockedNoise:
     def test_output(self):
-        cn = cydsp.daisysp.noise.ClockedNoise()
+        cn = daisysp.noise.ClockedNoise()
         cn.init(SR)
         cn.set_freq(100.0)
         out = cn.process(1024)
@@ -703,7 +703,7 @@ class TestClockedNoise:
 
 class TestFractalRandomGenerator:
     def test_output(self):
-        frg = cydsp.daisysp.noise.FractalRandomGenerator()
+        frg = daisysp.noise.FractalRandomGenerator()
         frg.init(SR)
         frg.set_freq(10.0)
         frg.set_color(0.5)
@@ -713,7 +713,7 @@ class TestFractalRandomGenerator:
 
 class TestGrainletOscillator:
     def test_output(self):
-        gl = cydsp.daisysp.noise.GrainletOscillator()
+        gl = daisysp.noise.GrainletOscillator()
         gl.init(SR)
         gl.set_freq(100.0)
         gl.set_formant_freq(500.0)
@@ -725,7 +725,7 @@ class TestGrainletOscillator:
 
 class TestParticle:
     def test_output(self):
-        pt = cydsp.daisysp.noise.Particle()
+        pt = daisysp.noise.Particle()
         pt.init(SR)
         pt.set_freq(200.0)
         pt.set_resonance(0.9)
@@ -737,7 +737,7 @@ class TestParticle:
 
 class TestSmoothRandomGenerator:
     def test_output(self):
-        sr = cydsp.daisysp.noise.SmoothRandomGenerator()
+        sr = daisysp.noise.SmoothRandomGenerator()
         sr.init(SR)
         sr.set_freq(5.0)
         out = sr.process(1024)
@@ -751,7 +751,7 @@ class TestSmoothRandomGenerator:
 
 class TestAnalogBassDrum:
     def test_trigger_and_output(self):
-        bd = cydsp.daisysp.drums.AnalogBassDrum()
+        bd = daisysp.drums.AnalogBassDrum()
         bd.init(SR)
         bd.set_freq(60.0)
         bd.set_tone(0.5)
@@ -763,7 +763,7 @@ class TestAnalogBassDrum:
 
 class TestAnalogSnareDrum:
     def test_trigger_and_output(self):
-        sd = cydsp.daisysp.drums.AnalogSnareDrum()
+        sd = daisysp.drums.AnalogSnareDrum()
         sd.init(SR)
         sd.set_freq(200.0)
         sd.set_tone(0.5)
@@ -776,7 +776,7 @@ class TestAnalogSnareDrum:
 
 class TestHiHat:
     def test_trigger_and_output(self):
-        hh = cydsp.daisysp.drums.HiHat()
+        hh = daisysp.drums.HiHat()
         hh.init(SR)
         hh.set_freq(3000.0)
         hh.set_tone(0.5)
@@ -789,7 +789,7 @@ class TestHiHat:
 
 class TestSyntheticBassDrum:
     def test_trigger_and_output(self):
-        bd = cydsp.daisysp.drums.SyntheticBassDrum()
+        bd = daisysp.drums.SyntheticBassDrum()
         bd.init(SR)
         bd.set_freq(60.0)
         bd.set_tone(0.5)
@@ -801,7 +801,7 @@ class TestSyntheticBassDrum:
 
 class TestSyntheticSnareDrum:
     def test_trigger_and_output(self):
-        sd = cydsp.daisysp.drums.SyntheticSnareDrum()
+        sd = daisysp.drums.SyntheticSnareDrum()
         sd.init(SR)
         sd.set_freq(200.0)
         sd.set_decay(0.5)
@@ -818,7 +818,7 @@ class TestSyntheticSnareDrum:
 
 class TestDrip:
     def test_trigger_and_output(self):
-        dr = cydsp.daisysp.physical_modeling.Drip()
+        dr = daisysp.physical_modeling.Drip()
         dr.init(SR, 0.004)
         out = dr.process(4096)
         assert out.shape == (4096,)
@@ -826,7 +826,7 @@ class TestDrip:
 
 class TestString:
     def test_excitation(self):
-        st = cydsp.daisysp.physical_modeling.String()
+        st = daisysp.physical_modeling.String()
         st.init(SR)
         st.set_freq(220.0)
         st.set_brightness(0.5)
@@ -841,7 +841,7 @@ class TestString:
 
 class TestModalVoice:
     def test_trigger(self):
-        mv = cydsp.daisysp.physical_modeling.ModalVoice()
+        mv = daisysp.physical_modeling.ModalVoice()
         mv.init(SR)
         mv.set_freq(440.0)
         mv.set_accent(0.8)
@@ -855,7 +855,7 @@ class TestModalVoice:
 
 class TestResonator:
     def test_process(self):
-        rs = cydsp.daisysp.physical_modeling.Resonator()
+        rs = daisysp.physical_modeling.Resonator()
         rs.init(0.3, 24, SR)
         rs.set_freq(440.0)
         rs.set_structure(0.5)
@@ -869,7 +869,7 @@ class TestResonator:
 
 class TestStringVoice:
     def test_trigger(self):
-        sv = cydsp.daisysp.physical_modeling.StringVoice()
+        sv = daisysp.physical_modeling.StringVoice()
         sv.init(SR)
         sv.set_freq(220.0)
         sv.set_accent(0.8)
@@ -883,7 +883,7 @@ class TestStringVoice:
 
 class TestPluck:
     def test_trigger(self):
-        pl = cydsp.daisysp.physical_modeling.Pluck(SR, 256, 0)
+        pl = daisysp.physical_modeling.Pluck(SR, 256, 0)
         pl.set_freq(440.0)
         pl.set_amp(1.0)
         pl.set_decay(0.95)
@@ -900,7 +900,7 @@ class TestPluck:
 
 class TestDcBlock:
     def test_removes_dc(self):
-        dcb = cydsp.daisysp.utility.DcBlock()
+        dcb = daisysp.utility.DcBlock()
         dcb.init(SR)
         # Signal with DC offset
         inp = np.ones(4096, dtype=np.float32) * 0.5
@@ -913,7 +913,7 @@ class TestDcBlock:
 
 class TestDelayLine:
     def test_delay(self):
-        dl = cydsp.daisysp.utility.DelayLine()
+        dl = daisysp.utility.DelayLine()
         dl.init()
         dl.set_delay(100.0)
         inp = np.zeros(200, dtype=np.float32)
@@ -927,7 +927,7 @@ class TestDelayLine:
 
 class TestLooper:
     def test_basic(self):
-        lo = cydsp.daisysp.utility.Looper(48000)
+        lo = daisysp.utility.Looper(48000)
         # Record
         lo.trig_record()
         inp = np.sin(np.linspace(0, 10, 1000)).astype(np.float32)
@@ -937,7 +937,7 @@ class TestLooper:
 
 class TestMaytrig:
     def test_probabilistic(self):
-        mt = cydsp.daisysp.utility.Maytrig()
+        mt = daisysp.utility.Maytrig()
         # With prob=1.0, should always trigger
         results = [mt.process(1.0) for _ in range(100)]
         assert all(r for r in results)
@@ -945,7 +945,7 @@ class TestMaytrig:
 
 class TestMetro:
     def test_ticks(self):
-        me = cydsp.daisysp.utility.Metro()
+        me = daisysp.utility.Metro()
         me.init(10.0, SR)  # 10 Hz
         out = me.process(int(SR))  # 1 second
         assert out.shape == (int(SR),)
@@ -956,7 +956,7 @@ class TestMetro:
 
 class TestSampleHold:
     def test_process(self):
-        sh = cydsp.daisysp.utility.SampleHold()
+        sh = daisysp.utility.SampleHold()
         val = sh.process(True, 0.5)
         assert isinstance(val, float)
         # Hold: should return same value without trigger
@@ -966,7 +966,7 @@ class TestSampleHold:
 
 class TestJitter:
     def test_output(self):
-        jt = cydsp.daisysp.utility.Jitter()
+        jt = daisysp.utility.Jitter()
         jt.init(SR)
         jt.set_amp(1.0)
         jt.set_cps_min(0.5)
@@ -977,7 +977,7 @@ class TestJitter:
 
 class TestPort:
     def test_glide(self):
-        po = cydsp.daisysp.utility.Port()
+        po = daisysp.utility.Port()
         po.init(SR, 0.01)
         # Step from 0 to 1 -- output should smoothly approach 1
         inp = np.ones(4096, dtype=np.float32)

@@ -1,16 +1,16 @@
 """Tests for cydsp.mix module (signalsmith mixing utilities)."""
 
 import numpy as np
-import cydsp
+from cydsp._core import mix
 
 
 class TestHadamard:
     def test_construction(self):
-        h = cydsp.mix.Hadamard(4)
+        h = mix.Hadamard(4)
         assert h is not None
 
     def test_in_place_shape(self):
-        h = cydsp.mix.Hadamard(4)
+        h = mix.Hadamard(4)
         inp = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
         out = h.in_place(inp)
         assert out.shape == (4,)
@@ -18,14 +18,14 @@ class TestHadamard:
 
     def test_involution(self):
         """Hadamard applied twice should return to original (it is self-inverse)."""
-        h = cydsp.mix.Hadamard(4)
+        h = mix.Hadamard(4)
         inp = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
         once = h.in_place(inp)
         twice = h.in_place(once)
         np.testing.assert_allclose(twice, inp, atol=1e-5)
 
     def test_scaling_factor(self):
-        h = cydsp.mix.Hadamard(4)
+        h = mix.Hadamard(4)
         sf = h.scaling_factor()
         assert isinstance(sf, float)
         # For size 4, scaling should be 1/sqrt(4) = 0.5
@@ -33,7 +33,7 @@ class TestHadamard:
 
     def test_energy_preservation(self):
         """Scaled Hadamard should preserve energy."""
-        h = cydsp.mix.Hadamard(8)
+        h = mix.Hadamard(8)
         inp = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], dtype=np.float32)
         out = h.in_place(inp)
         in_energy = np.sum(inp**2)
@@ -43,7 +43,7 @@ class TestHadamard:
         np.testing.assert_allclose(out_energy, in_energy, rtol=1e-4)
 
     def test_size_8(self):
-        h = cydsp.mix.Hadamard(8)
+        h = mix.Hadamard(8)
         inp = np.zeros(8, dtype=np.float32)
         inp[0] = 1.0
         out = h.in_place(inp)
@@ -54,7 +54,7 @@ class TestHadamard:
     def test_uniform_spread(self):
         """An impulse in one channel should spread equally to all channels."""
         n = 4
-        h = cydsp.mix.Hadamard(n)
+        h = mix.Hadamard(n)
         inp = np.zeros(n, dtype=np.float32)
         inp[0] = 1.0
         out = h.in_place(inp)
@@ -65,11 +65,11 @@ class TestHadamard:
 
 class TestHouseholder:
     def test_construction(self):
-        h = cydsp.mix.Householder(4)
+        h = mix.Householder(4)
         assert h is not None
 
     def test_in_place_shape(self):
-        h = cydsp.mix.Householder(4)
+        h = mix.Householder(4)
         inp = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
         out = h.in_place(inp)
         assert out.shape == (4,)
@@ -77,7 +77,7 @@ class TestHouseholder:
 
     def test_reflection_property(self):
         """Householder applied twice should return to original."""
-        h = cydsp.mix.Householder(4)
+        h = mix.Householder(4)
         inp = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
         once = h.in_place(inp)
         twice = h.in_place(once)
@@ -85,13 +85,13 @@ class TestHouseholder:
 
     def test_energy_preservation(self):
         """Householder reflection preserves energy."""
-        h = cydsp.mix.Householder(4)
+        h = mix.Householder(4)
         inp = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
         out = h.in_place(inp)
         np.testing.assert_allclose(np.sum(out**2), np.sum(inp**2), rtol=1e-5)
 
     def test_different_from_input(self):
-        h = cydsp.mix.Householder(4)
+        h = mix.Householder(4)
         inp = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
         out = h.in_place(inp)
         assert not np.allclose(out, inp)
@@ -99,13 +99,13 @@ class TestHouseholder:
 
 class TestCheapEnergyCrossfade:
     def test_returns_tuple(self):
-        to_c, from_c = cydsp.mix.cheap_energy_crossfade(0.5)
+        to_c, from_c = mix.cheap_energy_crossfade(0.5)
         assert isinstance(to_c, float)
         assert isinstance(from_c, float)
 
     def test_endpoints(self):
-        to_c_0, from_c_0 = cydsp.mix.cheap_energy_crossfade(0.0)
-        to_c_1, from_c_1 = cydsp.mix.cheap_energy_crossfade(1.0)
+        to_c_0, from_c_0 = mix.cheap_energy_crossfade(0.0)
+        to_c_1, from_c_1 = mix.cheap_energy_crossfade(1.0)
         # At x=0: full "from", zero "to"
         assert abs(to_c_0) < 0.01
         assert abs(from_c_0 - 1.0) < 0.01
@@ -114,14 +114,14 @@ class TestCheapEnergyCrossfade:
         assert abs(from_c_1) < 0.01
 
     def test_midpoint_equal_power(self):
-        to_c, from_c = cydsp.mix.cheap_energy_crossfade(0.5)
+        to_c, from_c = mix.cheap_energy_crossfade(0.5)
         # At midpoint, both should be approximately equal
         assert abs(to_c - from_c) < 0.1
 
     def test_energy_preservation(self):
         """to^2 + from^2 should be approximately 1 for energy-preserving crossfade."""
         for x in [0.0, 0.25, 0.5, 0.75, 1.0]:
-            to_c, from_c = cydsp.mix.cheap_energy_crossfade(x)
+            to_c, from_c = mix.cheap_energy_crossfade(x)
             energy = to_c**2 + from_c**2
             assert abs(energy - 1.0) < 0.1, f"Energy at x={x}: {energy}"
 
@@ -131,7 +131,7 @@ class TestCheapEnergyCrossfade:
         # Test interior points where the cheap approximation is well-behaved
         for x_int in range(1, 10):
             x = x_int / 10.0
-            to_c, _ = cydsp.mix.cheap_energy_crossfade(x)
+            to_c, _ = mix.cheap_energy_crossfade(x)
             to_values.append(to_c)
         for i in range(1, len(to_values)):
             assert to_values[i] >= to_values[i - 1] - 0.01

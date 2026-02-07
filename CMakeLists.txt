@@ -112,8 +112,10 @@ nanobind_add_module(_core
     src/cydsp/_core_stk.cpp
     src/cydsp/_core_madronalib.cpp
     src/cydsp/_core_hisstools.cpp
+    src/cydsp/_core_choc.cpp
 )
 target_link_libraries(_core PRIVATE signalsmith-dsp DaisySP DaisySP_LGPL stk_subset madronalib-dsp hisstools)
+target_include_directories(_core PRIVATE thirdparty/choc)
 
 if(MSVC)
     target_compile_options(_core PRIVATE /W4)
