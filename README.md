@@ -524,7 +524,7 @@ Full type stubs are provided in `_core.pyi` for IDE autocompletion and type chec
 
 ## Architecture
 
-```
+```text
 cydsp/
   __init__.py          # package root (__version__ only)
   __main__.py          # CLI entry point (argparse, subcommand handlers)
