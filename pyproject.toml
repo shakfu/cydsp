@@ -97,7 +97,7 @@ test-command = "pytest {project}/tests -v"
 test-skip = "*-macosx_x86_64"
 
 [tool.cibuildwheel.linux]
-archs = "x86_64 aarch64"
+archs = "x86_64"
 
 [tool.cibuildwheel.macos]
 archs = "arm64 x86_64"

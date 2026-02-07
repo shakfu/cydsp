@@ -40,15 +40,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.3.1
         env:
-          CIBW_ARCHS_LINUX: x86_64 aarch64
+          CIBW_ARCHS_LINUX: x86_64
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
