@@ -23,6 +23,14 @@ High-performance Python DSP toolkit built on C++ libraries via [nanobind](https:
 ## Install
 
 ```bash
+pip install cydsp
+```
+
+Or if you prefer to build from source (requires `uv` and `cmake`):
+
+```bash
+git clone https://github.com/shakfu/cydsp.git
+cd cydsp
 uv sync            # install dependencies + build extension
 uv run pytest      # run tests
 uv build           # build wheel
