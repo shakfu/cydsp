@@ -56,15 +56,15 @@ if(APPLE)
 else()
     target_compile_definitions(hisstools PUBLIC NO_NATIVE_FFT)
 endif()
-# HISSTools checks __arm64__ (Apple-specific); GCC on Linux uses __aarch64__
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    target_compile_definitions(hisstools PRIVATE __arm64__)
-endif()
+# HISSTools checks __arm64__ (Apple-specific); GCC/Linux uses __aarch64__.
+# Force-include a compat header that bridges this using compiler target defines,
+# which is cross-compilation safe (unlike CMAKE_SYSTEM_PROCESSOR).
+set(HISS_ARCH_COMPAT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/hisstools_arch_compat.h")
 if(MSVC)
     target_compile_definitions(hisstools PRIVATE NOMINMAX)
-    target_compile_options(hisstools PRIVATE /w)
+    target_compile_options(hisstools PRIVATE /w /FI"${HISS_ARCH_COMPAT}")
 else()
-    target_compile_options(hisstools PRIVATE -w)
+    target_compile_options(hisstools PRIVATE -w -include "${HISS_ARCH_COMPAT}")
 endif()
 
 # STK (subset -- no RtAudio/RtMidi/Socket/File I/O)
