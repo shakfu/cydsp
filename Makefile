@@ -4,7 +4,9 @@
 # This Makefile wraps common build commands for convenience.
 # The actual build is handled by scikit-build-core via pyproject.toml
 
-.PHONY: all sync build rebuild test lint format typecheck qa clean         distclean wheel sdist dist check publish-test publish upgrade         coverage coverage-html docs release help
+.PHONY: all sync build rebuild test lint format typecheck qa clean \
+        distclean wheel sdist dist check publish-test publish upgrade \
+        coverage coverage-html docs release help release
 
 # Default target
 all: build
@@ -53,6 +55,16 @@ check:
 
 # Build both wheel and sdist
 dist: wheel sdist check
+
+# Build wheels
+release:
+	@uv build --sdist
+	@uv build --wheel --python 3.10
+	@uv build --wheel --python 3.11
+	@uv build --wheel --python 3.12
+	@uv build --wheel --python 3.13
+	@uv build --wheel --python 3.14
+	@uv run twine check dist/*.whl dist/*.tar.gz
 
 # Publish to TestPyPI
 publish-test: check
