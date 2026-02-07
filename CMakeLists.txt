@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Required on Linux: static libs linked into shared .so need PIC
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(nanobind CONFIG REQUIRED)
 
@@ -152,6 +155,10 @@ if(MSVC)
     target_compile_options(_core PRIVATE /W4)
 else()
     target_compile_options(_core PRIVATE -Wall -Wextra -Wno-unknown-pragmas -Wno-sign-compare)
+    # GCC's -Wmaybe-uninitialized fires on inlined code from SYSTEM headers (e.g. HISSTools Statistics.hpp)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(_core PRIVATE -Wno-maybe-uninitialized)
+    endif()
 endif()
 
 install(TARGETS _core DESTINATION cydsp)
