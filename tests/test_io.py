@@ -296,6 +296,24 @@ class TestGenericReadWrite:
         with pytest.raises(ValueError, match="Unsupported"):
             write(tmp_path / "test.ogg", buf)
 
+    def test_audiobuffer_read_write_wav(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, frames=256, sample_rate=44100.0)
+        p = tmp_path / "ab.wav"
+        buf.write(str(p))
+        recovered = AudioBuffer.from_file(str(p))
+        assert recovered.frames == 256
+        assert recovered.sample_rate == 44100.0
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 32768 + 1e-4)
+
+    def test_audiobuffer_read_write_flac(self, tmp_path):
+        buf = AudioBuffer.sine(440.0, channels=2, frames=512, sample_rate=48000.0)
+        p = tmp_path / "ab.flac"
+        buf.write(str(p), bit_depth=24)
+        recovered = AudioBuffer.from_file(str(p))
+        assert recovered.channels == 2
+        assert recovered.frames == 512
+        np.testing.assert_allclose(recovered.data, buf.data, atol=1.0 / 8388608 + 1e-4)
+
     def test_case_insensitive_extension(self, tmp_path):
         buf = AudioBuffer.sine(440.0, frames=128, sample_rate=48000.0)
         p = tmp_path / "test.FLAC"

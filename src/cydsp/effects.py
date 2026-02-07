@@ -1448,6 +1448,7 @@ def stk_reverb(
     _stk.set_sample_rate(buf.sample_rate)
 
     algo = algorithm.lower()
+    rv: _stk_fx.FreeVerb | _stk_fx.JCRev | _stk_fx.NRev | _stk_fx.PRCRev
     if algo == "freeverb":
         rv = _stk_fx.FreeVerb()
         rv.set_room_size(room_size)

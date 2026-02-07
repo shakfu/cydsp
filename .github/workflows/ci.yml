@@ -1,5 +1,3 @@
-
-
 name: CI
 
 on:
@@ -46,14 +44,14 @@ jobs:
           fail_ci_if_error: false
 
   build:
-    name: Build (${{ matrix.os }}/${{ matrix.python-version }})
+    name: Build (${{ matrix.os }}/py${{ matrix.python-version }})
     needs: qa
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.10", "3.14"]
 
     steps:
       - uses: actions/checkout@v4

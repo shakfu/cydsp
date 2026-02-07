@@ -118,6 +118,103 @@ def write_wav(
         wf.writeframes(raw_bytes)
 
 
+def read_wav_bytes(data: bytes) -> AudioBuffer:
+    """Read WAV data from raw bytes and return an AudioBuffer.
+
+    Supports 8/16/24/32-bit PCM. Output is float32 normalized to [-1, 1].
+    """
+    import io as _io
+
+    bio = _io.BytesIO(data)
+    with wave.open(bio, "rb") as wf:
+        n_channels = wf.getnchannels()
+        sampwidth = wf.getsampwidth()
+        sample_rate = wf.getframerate()
+        n_frames = wf.getnframes()
+        raw_bytes = wf.readframes(n_frames)
+
+    total_samples = n_frames * n_channels
+
+    if sampwidth == 1:
+        samples = np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32)
+        samples = (samples - 128.0) / 128.0
+    elif sampwidth == 2:
+        samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
+        samples = samples / 32768.0
+    elif sampwidth == 3:
+        raw = np.frombuffer(raw_bytes, dtype=np.uint8).reshape(-1, 3)
+        padded = np.zeros((len(raw), 4), dtype=np.uint8)
+        padded[:, 0:3] = raw
+        padded[:, 3] = np.where(raw[:, 2] & 0x80, 0xFF, 0x00)
+        samples = padded.view(np.int32).flatten().astype(np.float32)
+        samples = samples / 8388608.0
+    elif sampwidth == 4:
+        samples = np.frombuffer(raw_bytes, dtype=np.int32).astype(np.float32)
+        samples = samples / 2147483648.0
+    else:
+        raise ValueError(f"Unsupported sample width: {sampwidth} bytes")
+
+    if len(samples) != total_samples:
+        raise ValueError(f"Expected {total_samples} samples, got {len(samples)}")
+
+    if n_channels == 1:
+        arr = samples.reshape(1, -1)
+    else:
+        arr = samples.reshape(-1, n_channels).T
+
+    arr = np.ascontiguousarray(arr, dtype=np.float32)
+    return AudioBuffer(arr, sample_rate=float(sample_rate))
+
+
+def write_wav_bytes(buf: AudioBuffer, bit_depth: int = 16) -> bytes:
+    """Serialize an AudioBuffer to WAV bytes.
+
+    Parameters
+    ----------
+    buf : AudioBuffer
+        Audio data to write.
+    bit_depth : int
+        Output bit depth: 16 or 24.
+
+    Returns
+    -------
+    bytes
+        WAV file content.
+    """
+    import io as _io
+
+    if bit_depth not in (16, 24):
+        raise ValueError(f"Unsupported bit_depth: {bit_depth} (use 16 or 24)")
+
+    n_channels = buf.channels
+    sample_rate = int(buf.sample_rate)
+    sampwidth = bit_depth // 8
+
+    data = buf.data.copy()
+    np.clip(data, -1.0, 1.0, out=data)
+
+    if bit_depth == 16:
+        interleaved = data.T.flatten()
+        scaled = (interleaved * 32767.0).astype(np.int16)
+        raw_bytes = scaled.tobytes()
+    elif bit_depth == 24:
+        interleaved = data.T.flatten()
+        scaled = np.clip(interleaved * 8388607.0, -8388608.0, 8388607.0).astype(
+            np.int32
+        )
+        bytes_4 = scaled.view(np.uint8).reshape(-1, 4)
+        raw_bytes = bytes_4[:, :3].tobytes()
+
+    bio = _io.BytesIO()
+    with wave.open(bio, "wb") as wf:
+        wf.setnchannels(n_channels)
+        wf.setsampwidth(sampwidth)
+        wf.setframerate(sample_rate)
+        wf.writeframes(raw_bytes)
+
+    return bio.getvalue()
+
+
 def read_flac(path: str | Path) -> AudioBuffer:
     """Read a FLAC file and return an AudioBuffer.
 

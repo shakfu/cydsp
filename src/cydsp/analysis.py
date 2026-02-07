@@ -576,8 +576,8 @@ def resample(buf: AudioBuffer, target_sr: float) -> AudioBuffer:
             target_frames = max(1, round(buf.frames * ratio))
             old_x = np.linspace(0.0, 1.0, buf.frames, dtype=np.float64)
             new_x = np.linspace(0.0, 1.0, target_frames, dtype=np.float64)
-            resampled = np.interp(new_x, old_x, ch_data.astype(np.float64))
-            out_channels.append(resampled.astype(np.float32))
+            interped = np.interp(new_x, old_x, ch_data.astype(np.float64))
+            out_channels.append(interped.astype(np.float32))
 
     out = np.stack(out_channels)
     return AudioBuffer(

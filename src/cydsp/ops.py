@@ -66,6 +66,7 @@ def delay_varying(
     max_delay = int(np.max(delays_2d)) + 64
     out = np.zeros_like(buf.data)
     for ch in range(buf.channels):
+        d: _delay.Delay | _delay.DelayCubic
         if interpolation == "cubic":
             d = _delay.DelayCubic(max_delay)
         else:

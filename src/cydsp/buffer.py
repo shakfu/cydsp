@@ -143,6 +143,9 @@ class AudioBuffer:
             return self._data
         return self._data.astype(dtype)
 
+    def __buffer__(self, flags: int, /) -> memoryview:
+        return self._data.__buffer__(flags)
+
     def __len__(self) -> int:
         """Number of frames (not channels)."""
         return self.frames
@@ -442,6 +445,23 @@ class AudioBuffer:
                 f"pipe() requires fn to return AudioBuffer, got {type(result).__name__}"
             )
         return result
+
+    # ------------------------------------------------------------------
+    # I/O
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_file(cls, path: str) -> AudioBuffer:
+        """Read an audio file (WAV/FLAC, detected by extension)."""
+        from cydsp.io import read as _read
+
+        return _read(path)
+
+    def write(self, path: str, bit_depth: int = 16) -> None:
+        """Write this buffer to an audio file (WAV/FLAC, detected by extension)."""
+        from cydsp.io import write as _write
+
+        _write(path, self, bit_depth=bit_depth)
 
     # ------------------------------------------------------------------
     # Copy

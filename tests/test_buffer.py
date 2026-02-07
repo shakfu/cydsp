@@ -159,6 +159,19 @@ class TestNumpyInterop:
         assert "layout='stereo'" in r
         assert "label='input'" in r
 
+    def test_buffer_protocol(self):
+        buf = AudioBuffer.sine(440.0, channels=2, frames=128, sample_rate=48000.0)
+        mv = memoryview(buf)
+        assert mv.shape == (2, 128)
+        assert mv.format == "f"  # float32
+        assert not mv.readonly
+
+    def test_memoryview_shares_memory(self):
+        buf = AudioBuffer.zeros(1, 64)
+        mv = memoryview(buf)
+        mv[0, 0] = 1.0
+        assert buf.data[0, 0] == 1.0
+
 
 # =========================================================================
 # Factory methods

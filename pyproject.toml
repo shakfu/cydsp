@@ -1,17 +1,24 @@
-
-
-
 [project]
 name = "cydsp"
-version = "0.1.0"
-description = "A Python extension module built with nanobind"
+version = "0.1.1"
+description = "High-performance Python DSP toolkit built on C++ libraries via nanobind"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = ["numpy"]
-keywords = ["nanobind", "python", "extension"]
+authors = [
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" },
+    { name = "cydsp contributors" }
+]
+keywords = ["audio", "dsp", "signal-processing", "filters", "fft", "synthesis", "effects"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -19,8 +26,22 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: C++",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Sound Synthesis",
+    "Topic :: Scientific/Engineering :: Information Analysis",
     "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/shakfu/cydsp"
+Repository = "https://github.com/shakfu/cydsp"
+Documentation = "https://github.com/shakfu/cydsp#readme"
+Issues = "https://github.com/shakfu/cydsp/issues"
+Changelog = "https://github.com/shakfu/cydsp/releases"
+
+[project.scripts]
+cydsp = "cydsp.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -41,9 +62,43 @@ cmake.args = []
 cmake.define = {}
 cmake.build-type = "Release"
 cmake.source-dir = "."
-sdist.include = []
-sdist.exclude = []
-wheel.exclude = []
+sdist.include = [
+    "CMakeLists.txt",
+    "src/",
+    "thirdparty/",
+]
+sdist.exclude = [
+    ".github/",
+    ".venv/",
+    "tests/",
+    "thirdparty/stk/bin/",
+    "thirdparty/stk/doc/",
+    "thirdparty/stk/projects/",
+    "thirdparty/stk/rawwaves/",
+    "thirdparty/DaisySP/examples/",
+    "thirdparty/DaisySP/tests/",
+    "thirdparty/madronalib/Tests/",
+    "thirdparty/madronalib/examples/",
+    "thirdparty/madronalib/doc/",
+    "thirdparty/HISSTools_Library/Documentation/",
+    "thirdparty/choc/tests/",
+    "thirdparty/choc/javascript/",
+]
+wheel.exclude = [
+    "*.cpp",
+]
 
-[tool.mypy]
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_* pp*"
+test-requires = "pytest"
+test-command = "pytest {project}/tests -v"
 
+[tool.cibuildwheel.linux]
+archs = "x86_64 aarch64"
+
+[tool.cibuildwheel.macos]
+archs = "x86_64 arm64"
+
+[tool.cibuildwheel.windows]
+archs = "AMD64"

@@ -34,7 +34,7 @@ format:
 
 # Type check with mypy
 typecheck:
-	@uv run mypy src/cydsp/__init__.py tests/ --exclude '.venv'
+	@uv run mypy src/cydsp tests/ --exclude '.venv'
 
 # Run a full quality assurance check
 qa: test lint typecheck format
@@ -49,7 +49,7 @@ sdist:
 
 # Check distributions with twine
 check:
-	@uv run twine check dist/*
+	@uv run twine check dist/*.whl dist/*.tar.gz
 
 # Build both wheel and sdist
 dist: wheel sdist check
