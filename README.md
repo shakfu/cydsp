@@ -550,11 +550,53 @@ cydsp/
   stream.py            # ring buffer, block processors, overlap-add
 ```
 
+## Demos
+
+Eight demo scripts in `demos/` process an input WAV file through various DSP algorithms and write the results to `build/demo-output/`. Run them all at once:
+
+```bash
+make demos                              # uses demos/s01.wav
+make demos DEMO_INPUT=my_audio.wav      # use a custom input file
+```
+
+Or run individual demos:
+
+```bash
+uv run python demos/demo_filters.py demos/s01.wav
+uv run python demos/demo_reverb.py demos/s01.wav -o /tmp/reverb-output
+uv run python demos/demo_distortion.py demos/s01.wav --no-normalize
+```
+
+| Script | Variants | What it demonstrates |
+|--------|----------|----------------------|
+| `demo_filters.py` | 13 | Lowpass, highpass, bandpass, notch, peak EQ, high/low shelf |
+| `demo_modulation.py` | 10 | Chorus, flanger, phaser, tremolo |
+| `demo_distortion.py` | 14 | Overdrive, wavefold, bitcrush, decimator, saturation, fold |
+| `demo_reverb.py` | 12 | FDN presets, ReverbSc, STK freeverb/jcrev/nrev/prcrev |
+| `demo_dynamics.py` | 9 | Compression, limiting, noise gate, parallel/multiband compression |
+| `demo_delay.py` | 8 | Stereo delay, ping-pong, slapback, STK echo |
+| `demo_pitch.py` | 10 | Time-domain and spectral pitch shifting |
+| `demo_spectral.py` | 12 | Time stretch, phase lock, spectral gate, tilt EQ, freeze |
+
+All scripts share the same interface:
+
+```
+usage: demo_*.py [-h] [-o OUT_DIR] [-n] infile
+
+positional arguments:
+  infile                Input .wav file
+
+options:
+  -o, --out-dir DIR     Output directory (default: build/demo-output)
+  -n, --no-normalize    Skip peak normalization (may clip on PCM output)
+```
+
 ## Development
 
 ```bash
 make build    # rebuild extension after C++ changes
 make test     # run 1114 tests
+make demos    # run all demo scripts
 make qa       # test + lint + typecheck + format
 make coverage # tests with coverage report
 ```

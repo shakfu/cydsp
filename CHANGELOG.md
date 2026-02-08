@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Demo scripts** (`demos/`) -- 8 runnable demo scripts producing 88 output WAV files that showcase how different DSP algorithms change the sound of an input file
+  - `demo_filters.py` -- 13 biquad filter variants (lowpass, highpass, bandpass, notch, peak, shelving)
+  - `demo_modulation.py` -- 10 modulation effects (chorus, flanger, phaser, tremolo)
+  - `demo_distortion.py` -- 14 distortion/saturation effects (overdrive, wavefold, bitcrush, decimator, saturate, fold)
+  - `demo_reverb.py` -- 12 reverb algorithms (FDN presets, ReverbSc, STK freeverb/jcrev/nrev/prcrev)
+  - `demo_dynamics.py` -- 9 dynamics processors (compression, limiting, gating, parallel/multiband compression)
+  - `demo_delay.py` -- 8 delay effects (stereo delay, ping-pong, slapback, echo)
+  - `demo_pitch.py` -- 10 pitch shifters (time-domain and spectral at various intervals)
+  - `demo_spectral.py` -- 12 spectral transforms (time stretch, phase lock, spectral gate, tilt EQ, freeze)
+  - All scripts accept positional `infile`, optional `-o`/`--out-dir` (default `build/demo-output/`), and `-n`/`--no-normalize` to skip peak normalization
+  - Peak normalization (0 dBFS) applied by default to prevent clipping on PCM output
+- `make demos` target -- runs all demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
+
 ## [0.1.2]
 
 ### Changed

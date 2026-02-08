@@ -6,7 +6,7 @@
 
 .PHONY: all sync build rebuild test lint format typecheck qa clean \
         distclean wheel sdist dist check publish-test publish upgrade \
-        coverage coverage-html docs release help release
+        coverage coverage-html docs release help release demos
 
 # Default target
 all: build
@@ -93,6 +93,19 @@ coverage-html:
 docs:
 	@uv run sphinx-build -b html docs/ docs/_build/html
 
+# Run all demo scripts (output to build/demo-output/)
+DEMO_INPUT ?= demos/s01.wav
+demos:
+	@mkdir -p build/demo-output
+	@uv run python demos/demo_filters.py $(DEMO_INPUT)
+	@uv run python demos/demo_modulation.py $(DEMO_INPUT)
+	@uv run python demos/demo_distortion.py $(DEMO_INPUT)
+	@uv run python demos/demo_reverb.py $(DEMO_INPUT)
+	@uv run python demos/demo_dynamics.py $(DEMO_INPUT)
+	@uv run python demos/demo_delay.py $(DEMO_INPUT)
+	@uv run python demos/demo_pitch.py $(DEMO_INPUT)
+	@uv run python demos/demo_spectral.py $(DEMO_INPUT)
+
 # Clean build artifacts
 clean:
 	@rm -rf build/
@@ -131,6 +144,7 @@ help:
 	@echo "  coverage-html- Generate HTML coverage report"
 	@echo "  docs         - Build documentation with Sphinx"
 	@echo "  release      - Bump version, tag, and prepare release"
+	@echo "  demos        - Run all demo scripts (DEMO_INPUT=demos/s01.wav)"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  distclean    - Remove all generated files"
 	@echo "  help         - Show this help message"
