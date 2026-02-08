@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Demo scripts** (`demos/`) -- 8 runnable demo scripts producing 88 output WAV files that showcase how different DSP algorithms change the sound of an input file
+- **Demo scripts** (`demos/`) -- 15 runnable demo scripts showcasing the full API surface
   - `demo_filters.py` -- 13 biquad filter variants (lowpass, highpass, bandpass, notch, peak, shelving)
   - `demo_modulation.py` -- 10 modulation effects (chorus, flanger, phaser, tremolo)
   - `demo_distortion.py` -- 14 distortion/saturation effects (overdrive, wavefold, bitcrush, decimator, saturate, fold)
@@ -18,9 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `demo_delay.py` -- 8 delay effects (stereo delay, ping-pong, slapback, echo)
   - `demo_pitch.py` -- 10 pitch shifters (time-domain and spectral at various intervals)
   - `demo_spectral.py` -- 12 spectral transforms (time stretch, phase lock, spectral gate, tilt EQ, freeze)
-  - All scripts accept positional `infile`, optional `-o`/`--out-dir` (default `build/demo-output/`), and `-n`/`--no-normalize` to skip peak normalization
+  - `demo_daisysp_filters.py` -- 21 DaisySP filter variants (SVF, ladder, moog, tone, modal, comb)
+  - `demo_composed.py` -- 13 composed effects (autowah, sample rate reduce, DC block, exciter, de-esser, vocal chain, mastering, STK chorus)
+  - `demo_spectral_extra.py` -- 8 additional spectral transforms (denoise, EQ match, spectral morph)
+  - `demo_ops.py` -- 29 core DSP operations (delay, vibrato, convolution, envelopes, fades, panning, stereo widening, crossfade, normalization, trim, oversample)
+  - `demo_resample.py` -- 6 resampling variants (madronalib and FFT methods at 22k/48k/96k)
+  - `demo_synthesis.py` -- 44 synthesis sounds (oscillators, FM, formant, noise, drums, physical modeling, STK instruments, sequence) -- no input file required
+  - `demo_analysis.py` -- audio analysis printout (loudness, spectral features, pitch detection, onset detection, chromagram) -- no audio output
+  - All file-processing scripts accept positional `infile`, optional `-o`/`--out-dir` (default `build/demo-output/`), and `-n`/`--no-normalize` to skip peak normalization
   - Peak normalization (0 dBFS) applied by default to prevent clipping on PCM output
-- `make demos` target -- runs all demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
+- `make demos` target -- runs all 15 demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
 
 ## [0.1.2]
 

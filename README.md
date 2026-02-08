@@ -552,7 +552,7 @@ cydsp/
 
 ## Demos
 
-Eight demo scripts in `demos/` process an input WAV file through various DSP algorithms and write the results to `build/demo-output/`. Run them all at once:
+15 demo scripts in `demos/` showcase the full API surface. Run them all at once:
 
 ```bash
 make demos                              # uses demos/s01.wav
@@ -565,6 +565,8 @@ Or run individual demos:
 uv run python demos/demo_filters.py demos/s01.wav
 uv run python demos/demo_reverb.py demos/s01.wav -o /tmp/reverb-output
 uv run python demos/demo_distortion.py demos/s01.wav --no-normalize
+uv run python demos/demo_synthesis.py                # no input file needed
+uv run python demos/demo_analysis.py demos/s01.wav   # prints to stdout
 ```
 
 | Script | Variants | What it demonstrates |
@@ -577,8 +579,15 @@ uv run python demos/demo_distortion.py demos/s01.wav --no-normalize
 | `demo_delay.py` | 8 | Stereo delay, ping-pong, slapback, STK echo |
 | `demo_pitch.py` | 10 | Time-domain and spectral pitch shifting |
 | `demo_spectral.py` | 12 | Time stretch, phase lock, spectral gate, tilt EQ, freeze |
+| `demo_daisysp_filters.py` | 21 | SVF, ladder, moog, tone, modal, comb filters |
+| `demo_composed.py` | 13 | Autowah, SR reduce, DC block, exciter, de-esser, vocal chain, mastering, STK chorus |
+| `demo_spectral_extra.py` | 8 | Spectral denoise, EQ match, spectral morph |
+| `demo_ops.py` | 29 | Delay, vibrato, convolution, envelopes, fades, panning, stereo widening, crossfade |
+| `demo_resample.py` | 6 | Madronalib and FFT resampling at 22k/48k/96k |
+| `demo_synthesis.py` | 44 | Oscillators, FM, noise, drums, physical modeling, STK instruments (no input file) |
+| `demo_analysis.py` | -- | Loudness, spectral features, pitch, onsets, chromagram (stdout only) |
 
-All scripts share the same interface:
+File-processing scripts share the same interface:
 
 ```
 usage: demo_*.py [-h] [-o OUT_DIR] [-n] infile
@@ -590,6 +599,8 @@ options:
   -o, --out-dir DIR     Output directory (default: build/demo-output)
   -n, --no-normalize    Skip peak normalization (may clip on PCM output)
 ```
+
+`demo_synthesis.py` generates sounds from scratch (no input file; takes `-o` and `-n` only). `demo_analysis.py` prints measurements to stdout (no audio output).
 
 ## Development
 

@@ -105,6 +105,13 @@ demos:
 	@uv run python demos/demo_delay.py $(DEMO_INPUT)
 	@uv run python demos/demo_pitch.py $(DEMO_INPUT)
 	@uv run python demos/demo_spectral.py $(DEMO_INPUT)
+	@uv run python demos/demo_daisysp_filters.py $(DEMO_INPUT)
+	@uv run python demos/demo_composed.py $(DEMO_INPUT)
+	@uv run python demos/demo_spectral_extra.py $(DEMO_INPUT)
+	@uv run python demos/demo_ops.py $(DEMO_INPUT)
+	@uv run python demos/demo_resample.py $(DEMO_INPUT)
+	@uv run python demos/demo_synthesis.py
+	@uv run python demos/demo_analysis.py $(DEMO_INPUT)
 
 # Clean build artifacts
 clean:
