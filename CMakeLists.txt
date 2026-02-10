@@ -67,6 +67,13 @@ else()
     target_compile_options(hisstools PRIVATE -w -include "${HISS_ARCH_COMPAT}")
 endif()
 
+# GrainflowLib (header-only, MIT)
+add_library(grainflow-dsp INTERFACE)
+target_include_directories(grainflow-dsp INTERFACE
+    thirdparty/GrainflowLib/include
+    thirdparty/GrainflowLib/lib/AudioFile
+)
+
 # STK (subset -- no RtAudio/RtMidi/Socket/File I/O)
 set(STK_SOURCES
     thirdparty/stk/src/Stk.cpp
@@ -137,8 +144,9 @@ nanobind_add_module(_core
     src/cydsp/_core_madronalib.cpp
     src/cydsp/_core_hisstools.cpp
     src/cydsp/_core_choc.cpp
+    src/cydsp/_core_grainflow.cpp
 )
-target_link_libraries(_core PRIVATE signalsmith-dsp DaisySP DaisySP_LGPL stk_subset madronalib-dsp hisstools)
+target_link_libraries(_core PRIVATE signalsmith-dsp DaisySP DaisySP_LGPL stk_subset madronalib-dsp hisstools grainflow-dsp)
 target_include_directories(_core SYSTEM PRIVATE thirdparty/choc)
 
 # Mark all thirdparty include dirs as SYSTEM to suppress warnings from their headers
@@ -165,6 +173,10 @@ endif()
 get_target_property(_hiss_inc hisstools INTERFACE_INCLUDE_DIRECTORIES)
 if(_hiss_inc)
     set_target_properties(hisstools PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_hiss_inc}")
+endif()
+get_target_property(_gf_inc grainflow-dsp INTERFACE_INCLUDE_DIRECTORIES)
+if(_gf_inc)
+    set_target_properties(grainflow-dsp PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_gf_inc}")
 endif()
 
 if(MSVC)

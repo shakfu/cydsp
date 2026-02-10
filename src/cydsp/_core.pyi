@@ -2091,3 +2091,186 @@ class choc:
     ) -> None:
         """Write audio data to a FLAC file. data is [channels, frames] float32."""
         ...
+
+class grainflow:
+    # --- Parameter name constants (gf_param_name) ---
+    PARAM_ERR: int
+    PARAM_DELAY: int
+    PARAM_RATE: int
+    PARAM_GLISSON: int
+    PARAM_GLISSON_ROWS: int
+    PARAM_GLISSON_POSITION: int
+    PARAM_WINDOW: int
+    PARAM_AMPLITUDE: int
+    PARAM_SPACE: int
+    PARAM_ENVELOPE_POSITION: int
+    PARAM_N_ENVELOPES: int
+    PARAM_DIRECTION: int
+    PARAM_START_POINT: int
+    PARAM_STOP_POINT: int
+    PARAM_RATE_QUANTIZE_SEMI: int
+    PARAM_LOOP_MODE: int
+    PARAM_CHANNEL: int
+    PARAM_DENSITY: int
+    PARAM_VIBRATO_RATE: int
+    PARAM_VIBRATO_DEPTH: int
+    PARAM_TRANSPOSE: int
+    PARAM_GLISSON_ST: int
+    PARAM_STREAM: int
+
+    # --- Parameter type constants (gf_param_type) ---
+    PTYPE_ERR: int
+    PTYPE_BASE: int
+    PTYPE_RANDOM: int
+    PTYPE_OFFSET: int
+    PTYPE_MODE: int
+    PTYPE_VALUE: int
+
+    # --- Stream mode constants (gf_stream_set_type) ---
+    STREAM_AUTOMATIC: int
+    STREAM_PER: int
+    STREAM_RANDOM: int
+    STREAM_MANUAL: int
+
+    # --- Buffer type constants (gf_buffers) ---
+    BUF_BUFFER: int
+    BUF_ENVELOPE: int
+    BUF_RATE: int
+    BUF_DELAY: int
+    BUF_WINDOW: int
+    BUF_GLISSON: int
+
+    # --- Buffer mode constants (gf_buffer_mode) ---
+    BUFMODE_NORMAL: int
+    BUFMODE_SEQUENCE: int
+    BUFMODE_RANDOM: int
+
+    # --- Pan mode constants (gf_pan_mode) ---
+    PAN_BIPOLAR: int
+    PAN_UNIPOLAR: int
+    PAN_STEREO: int
+
+    class GfBuffer:
+        def __init__(self, frames: int, channels: int, samplerate: int) -> None: ...
+        def set_data(self, data: NDArray[np.float32]) -> None: ...
+        def get_data(self) -> NDArray[np.float32]: ...
+        @property
+        def channels(self) -> int: ...
+        @property
+        def frames(self) -> int: ...
+        @property
+        def samplerate(self) -> int: ...
+
+    class GrainCollection:
+        def __init__(self, num_grains: int, samplerate: int) -> None: ...
+        def set_buffer(
+            self,
+            buf: grainflow.GfBuffer,
+            buf_type: int,
+            target: int = 0,
+        ) -> None: ...
+        def set_buffer_str(
+            self,
+            buf: grainflow.GfBuffer,
+            type_str: str,
+            target: int = 0,
+        ) -> None: ...
+        def param_set(
+            self,
+            target: int,
+            param_name: int,
+            param_type: int,
+            value: float,
+        ) -> None: ...
+        def param_set_str(self, target: int, name: str, value: float) -> int: ...
+        def param_get(self, target: int, param_name: int) -> float: ...
+        def param_get_typed(
+            self, target: int, param_name: int, param_type: int
+        ) -> float: ...
+        def set_active_grains(self, n: int) -> None: ...
+        @property
+        def active_grains(self) -> int: ...
+        @property
+        def grains(self) -> int: ...
+        def set_auto_overlap(self, v: bool) -> None: ...
+        def get_auto_overlap(self) -> bool: ...
+        def stream_set(self, mode: int, nstreams: int) -> None: ...
+        def stream_set_manual(self, grain: int, stream_id: int) -> None: ...
+        def stream_get(self, grain: int) -> int: ...
+        @property
+        def streams(self) -> int: ...
+        def process(
+            self,
+            clock: NDArray[np.float32],
+            traversal: NDArray[np.float32],
+            fm: NDArray[np.float32],
+            am: NDArray[np.float32],
+            samplerate: int,
+        ) -> tuple[
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+            NDArray[np.float32],
+        ]: ...
+
+    class Panner:
+        def __init__(
+            self,
+            in_channels: int,
+            out_channels: int = 2,
+            pan_mode: int = 2,
+        ) -> None: ...
+        def set_pan_position(self, v: float) -> None: ...
+        def set_pan_spread(self, v: float) -> None: ...
+        def set_pan_quantization(self, v: float) -> None: ...
+        @property
+        def pan_position(self) -> float: ...
+        @property
+        def pan_spread(self) -> float: ...
+        def process(
+            self,
+            grains: NDArray[np.float32],
+            grain_states: NDArray[np.float32],
+            out_channels: int = 2,
+        ) -> NDArray[np.float32]: ...
+
+    class Recorder:
+        def __init__(self, samplerate: int) -> None: ...
+        def set_target(self, frames: int, channels: int, samplerate: int) -> None: ...
+        def set_n_filters(self, n: int) -> None: ...
+        def set_filter_params(
+            self, idx: int, freq: float, q: float, mix: float
+        ) -> None: ...
+        def process(
+            self,
+            input: NDArray[np.float32],
+            time_override: float = 0.0,
+        ) -> NDArray[np.float32]: ...
+        def get_buffer_data(self) -> NDArray[np.float32]: ...
+        @property
+        def overdub(self) -> float: ...
+        @overdub.setter
+        def overdub(self, v: float) -> None: ...
+        @property
+        def freeze(self) -> bool: ...
+        @freeze.setter
+        def freeze(self, v: bool) -> None: ...
+        @property
+        def sync(self) -> bool: ...
+        @sync.setter
+        def sync(self, v: bool) -> None: ...
+        @property
+        def state(self) -> bool: ...
+        @state.setter
+        def state(self, v: bool) -> None: ...
+        def set_rec_range(self, lo: float, hi: float) -> None: ...
+        def get_rec_range(self) -> tuple[float, float]: ...
+
+    class Phasor:
+        def __init__(self, rate: float, samplerate: int) -> None: ...
+        def set_rate(self, rate: float, samplerate: int) -> None: ...
+        def perform(self, frames: int = 64) -> NDArray[np.float32]: ...

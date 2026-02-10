@@ -12,6 +12,7 @@ High-performance Python DSP toolkit built on C++ libraries via [nanobind](https:
 | [madronalib](https://github.com/madronalabs/madronalib) | MIT | FDN reverbs, resampling, generators, projections, windows |
 | [HISSTools Library](https://github.com/AlexHarker/HISSTools_Library) | BSD-3 | Convolution, spectral processing, statistical analysis, windows |
 | [CHOC](https://github.com/Tracktion/choc) | ISC | FLAC codec (read/write) |
+| [GrainflowLib](https://github.com/composingcap/GrainflowLib) | MIT | Granular synthesis (grain collections, panning, recording, phasor) |
 
 ## Requirements
 
@@ -490,9 +491,45 @@ out = chain.process(buf)
 out = process_blocks(buf, block_size=2048, hop_size=512, fn=my_spectral_fn)
 ```
 
+### `cydsp._core.grainflow` -- Granular synthesis (low-level)
+
+Direct access to GrainflowLib's granular synthesis engine.
+
+```python
+from cydsp._core import grainflow as gf
+
+# Create a buffer and fill with audio data
+buf = gf.GfBuffer(4096, 1, 48000)
+buf.set_data(audio_array)  # [channels, frames] float32
+
+# Create a grain collection
+gc = gf.GrainCollection(num_grains=8, samplerate=48000)
+gc.set_buffer(buf, gf.BUF_BUFFER, 0)  # 0 = set for all grains
+
+# Set parameters (enum-based or string reflection)
+gc.param_set(0, gf.PARAM_RATE, gf.PTYPE_BASE, 1.0)
+gc.param_set_str(0, "delayRandom", 10.0)
+
+# Generate a clock and process
+phasor = gf.Phasor(rate=10.0, samplerate=48000)
+clock = phasor.perform(256).reshape(1, 256)
+traversal = np.linspace(0, 0.5, 256, dtype=np.float32).reshape(1, 256)
+fm = np.zeros((1, 256), dtype=np.float32)
+am = np.zeros((1, 256), dtype=np.float32)
+
+# Returns 8-element tuple: (output, state, progress, playhead, amp, envelope, buf_ch, stream_ch)
+result = gc.process(clock, traversal, fm, am, 48000)
+grain_output = result[0]  # [num_grains, block_size]
+
+# Pan grains to stereo
+panner = gf.Panner(in_channels=8, out_channels=2, pan_mode=gf.PAN_STEREO)
+panner.set_pan_spread(0.5)
+stereo = panner.process(grain_output, result[1], out_channels=2)  # [2, block_size]
+```
+
 ### `cydsp._core` -- C++ bindings (low-level)
 
-Direct access to the C++ extension module with 12 submodules. All high-level Python modules build on these.
+Direct access to the C++ extension module with 13 submodules. All high-level Python modules build on these.
 
 | Submodule | Backend | Contents |
 |-----------|---------|----------|
@@ -508,9 +545,10 @@ Direct access to the C++ extension module with 12 submodules. All high-level Pyt
 | `madronalib` | madronalib | FDN reverbs, resampling, generators, 18 projection functions, 6 window functions |
 | `hisstools` | HISSTools | Convolution (mono/multi), spectral processing, 24 statistics functions, 28 window functions, partial tracking |
 | `choc` | CHOC | FLAC read/write |
+| `grainflow` | GrainflowLib | `GfBuffer`, `GrainCollection`, `Panner`, `Recorder`, `Phasor`, 37 enum constants |
 
 ```python
-from cydsp._core import filters, fft, delay, daisysp, stk, madronalib, hisstools
+from cydsp._core import filters, fft, delay, daisysp, stk, madronalib, hisstools, grainflow
 
 # Example: direct biquad usage
 bq = filters.Biquad()
@@ -552,7 +590,7 @@ cydsp/
 
 ## Demos
 
-15 demo scripts in `demos/` showcase the full API surface. Run them all at once:
+16 demo scripts in `demos/` showcase the full API surface. Run them all at once:
 
 ```bash
 make demos                              # uses demos/s01.wav
@@ -586,6 +624,7 @@ uv run python demos/demo_analysis.py demos/s01.wav   # prints to stdout
 | `demo_resample.py` | 6 | Madronalib and FFT resampling at 22k/48k/96k |
 | `demo_synthesis.py` | 44 | Oscillators, FM, noise, drums, physical modeling, STK instruments (no input file) |
 | `demo_analysis.py` | -- | Loudness, spectral features, pitch, onsets, chromagram (stdout only) |
+| `demo_grainflow.py` | 7 | Granular clouds (basic, dense), pitch shift, sparse stochastic, stereo panning, recorder |
 
 File-processing scripts share the same interface:
 
@@ -600,14 +639,14 @@ options:
   -n, --no-normalize    Skip peak normalization (may clip on PCM output)
 ```
 
-`demo_synthesis.py` generates sounds from scratch (no input file; takes `-o` and `-n` only). `demo_analysis.py` prints measurements to stdout (no audio output).
+`demo_synthesis.py` generates sounds from scratch (no input file; takes `-o` and `-n` only). `demo_analysis.py` prints measurements to stdout (no audio output). `demo_grainflow.py` processes an input file through granular synthesis.
 
 ## Development
 
 ```bash
 make build    # rebuild extension after C++ changes
-make test     # run 1114 tests
-make demos    # run all demo scripts
+make test     # run 1163 tests
+make demos    # run all 16 demo scripts
 make qa       # test + lint + typecheck + format
 make coverage # tests with coverage report
 ```
