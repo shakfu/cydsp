@@ -1547,3 +1547,67 @@ def stk_echo(
         return e.process(np.ascontiguousarray(x, dtype=np.float32))
 
     return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Automatic Gain Control
+# ---------------------------------------------------------------------------
+
+
+def agc(
+    buf: AudioBuffer,
+    target_level: float = 1.0,
+    max_gain_db: float = 60.0,
+    average_len: int = 100,
+    attack: float = 0.01,
+    release: float = 0.01,
+) -> AudioBuffer:
+    """Automatic Gain Control.
+
+    Parameters
+    ----------
+    target_level : float
+        Desired RMS output level (linear).
+    max_gain_db : float
+        Maximum gain in dB to prevent boosting silence to infinity.
+    average_len : int
+        Number of samples for the moving-average power estimator.
+    attack : float
+        Attack time constant in seconds (fast gain reduction).
+    release : float
+        Release time constant in seconds (slow gain increase).
+    """
+    sr = buf.sample_rate
+    max_gain_lin = 10.0 ** (max_gain_db / 20.0)
+    attack_coeff = 1.0 - np.exp(-1.0 / (sr * attack)) if attack > 0 else 1.0
+    release_coeff = 1.0 - np.exp(-1.0 / (sr * release)) if release > 0 else 1.0
+
+    def _process(x):
+        n = len(x)
+        x64 = x.astype(np.float64)
+        out = np.empty(n, dtype=np.float64)
+        eps = 1e-10
+
+        # Moving-average power estimate
+        power_est = 0.0
+        current_gain = 1.0
+
+        for i in range(n):
+            # Update running power estimate (exponential moving average)
+            power_est += (x64[i] ** 2 - power_est) / average_len
+
+            # Desired gain from power estimate
+            rms = np.sqrt(max(power_est, eps))
+            desired_gain = min(target_level / rms, max_gain_lin)
+
+            # Asymmetric smoothing
+            if desired_gain < current_gain:
+                current_gain += attack_coeff * (desired_gain - current_gain)
+            else:
+                current_gain += release_coeff * (desired_gain - current_gain)
+
+            out[i] = x64[i] * current_gain
+
+        return out.astype(np.float32)
+
+    return _process_per_channel(buf, _process)

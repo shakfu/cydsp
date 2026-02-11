@@ -993,3 +993,48 @@ class TestStkEffects:
         buf = AudioBuffer.noise(channels=1, frames=4096, sample_rate=48000.0, seed=0)
         result = effects.stk_echo(buf, delay_ms=100.0, mix=0.5)
         assert not np.allclose(result.data, buf.data)
+
+
+# ---------------------------------------------------------------------------
+# AGC
+# ---------------------------------------------------------------------------
+
+
+class TestAgc:
+    def test_boosts_quiet_signal(self):
+        """AGC should increase the level of a quiet signal."""
+        buf = AudioBuffer.sine(440.0, frames=8192, sample_rate=48000.0) * 0.01
+        result = effects.agc(buf, target_level=0.5, attack=0.001, release=0.001)
+        # After convergence, output RMS should be higher than input
+        in_rms = np.sqrt(np.mean(buf.data[:, -2048:] ** 2))
+        out_rms = np.sqrt(np.mean(result.data[:, -2048:] ** 2))
+        assert out_rms > in_rms * 2
+
+    def test_attenuates_loud_signal(self):
+        """AGC should reduce the level of a loud signal."""
+        buf = AudioBuffer.sine(440.0, frames=8192, sample_rate=48000.0) * 2.0
+        result = effects.agc(buf, target_level=0.1, attack=0.001, release=0.001)
+        in_rms = np.sqrt(np.mean(buf.data[:, -2048:] ** 2))
+        out_rms = np.sqrt(np.mean(result.data[:, -2048:] ** 2))
+        assert out_rms < in_rms
+
+    def test_shape_preserved(self):
+        buf = AudioBuffer.noise(channels=2, frames=4096, sample_rate=48000.0, seed=0)
+        result = effects.agc(buf)
+        assert result.channels == 2
+        assert result.frames == 4096
+        assert result.data.dtype == np.float32
+
+    def test_max_gain_clamped(self):
+        """AGC on silence should not produce huge output."""
+        buf = AudioBuffer.zeros(1, 2048, sample_rate=48000.0)
+        result = effects.agc(buf, target_level=1.0, max_gain_db=20.0)
+        assert np.max(np.abs(result.data)) < 1e-5
+
+    def test_metadata_preserved(self):
+        buf = AudioBuffer.noise(
+            channels=1, frames=2048, sample_rate=44100.0, seed=0, label="agc"
+        )
+        result = effects.agc(buf)
+        assert result.sample_rate == 44100.0
+        assert result.label == "agc"

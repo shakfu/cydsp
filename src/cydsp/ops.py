@@ -657,6 +657,206 @@ def mid_side_decode(buf: AudioBuffer) -> AudioBuffer:
     )
 
 
+# ---------------------------------------------------------------------------
+# Cross-correlation
+# ---------------------------------------------------------------------------
+
+
+def xcorr(buf_a: AudioBuffer, buf_b: AudioBuffer | None = None) -> np.ndarray:
+    """FFT-based cross-correlation (or autocorrelation).
+
+    Parameters
+    ----------
+    buf_a : AudioBuffer
+        First signal (mono). Multi-channel buffers are mixed to mono.
+    buf_b : AudioBuffer or None
+        Second signal. If None, computes autocorrelation of *buf_a*.
+
+    Returns
+    -------
+    np.ndarray
+        1D cross-correlation array of length ``len_a + len_b - 1``
+        (or ``2 * len_a - 1`` for autocorrelation).
+    """
+    a = np.mean(buf_a.data, axis=0).astype(np.float64) if buf_a.channels > 1 else buf_a.data[0].astype(np.float64)
+    if buf_b is None:
+        b = a
+    else:
+        b = np.mean(buf_b.data, axis=0).astype(np.float64) if buf_b.channels > 1 else buf_b.data[0].astype(np.float64)
+
+    full_len = len(a) + len(b) - 1
+    # Next power of 2 for efficient FFT
+    fft_size = 1
+    while fft_size < full_len:
+        fft_size *= 2
+
+    A = np.fft.rfft(a, n=fft_size)
+    B = np.fft.rfft(b, n=fft_size)
+    corr = np.fft.irfft(A * np.conj(B), n=fft_size)[:full_len]
+    return corr.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Hilbert transform / analytic signal envelope
+# ---------------------------------------------------------------------------
+
+
+def hilbert(buf: AudioBuffer) -> AudioBuffer:
+    """Compute the envelope (magnitude of analytic signal) per channel.
+
+    Uses the FFT-based method: zero negative frequencies, IFFT,
+    then take the absolute value.
+
+    Returns
+    -------
+    AudioBuffer
+        Envelope of the analytic signal (real-valued).
+    """
+    def _process(x):
+        n = len(x)
+        X = np.fft.fft(x.astype(np.float64))
+        # Build the analytic signal multiplier
+        h = np.zeros(n, dtype=np.float64)
+        h[0] = 1.0
+        if n % 2 == 0:
+            h[n // 2] = 1.0
+            h[1 : n // 2] = 2.0
+        else:
+            h[1 : (n + 1) // 2] = 2.0
+        analytic = np.fft.ifft(X * h)
+        return np.abs(analytic).astype(np.float32)
+
+    return _process_per_channel(buf, _process)
+
+
+def envelope(buf: AudioBuffer) -> AudioBuffer:
+    """Compute the amplitude envelope (magnitude of analytic signal).
+
+    Alias for :func:`hilbert`.
+    """
+    return hilbert(buf)
+
+
+# ---------------------------------------------------------------------------
+# Median filter
+# ---------------------------------------------------------------------------
+
+
+def median_filter(buf: AudioBuffer, kernel_size: int = 3) -> AudioBuffer:
+    """Apply a median filter per channel.
+
+    Parameters
+    ----------
+    kernel_size : int
+        Window size for the median (must be odd and >= 1).
+    """
+    if kernel_size < 1 or kernel_size % 2 == 0:
+        raise ValueError(f"kernel_size must be odd and >= 1, got {kernel_size}")
+
+    half = kernel_size // 2
+
+    def _process(x):
+        n = len(x)
+        padded = np.pad(x, (half, half), mode="edge")
+        out = np.empty(n, dtype=np.float32)
+        # Use stride_tricks for a sliding window view
+        shape = (n, kernel_size)
+        strides = (padded.strides[0], padded.strides[0])
+        windows = np.lib.stride_tricks.as_strided(padded, shape=shape, strides=strides)
+        out[:] = np.median(windows, axis=1).astype(np.float32)
+        return out
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# LMS adaptive filter
+# ---------------------------------------------------------------------------
+
+
+def lms_filter(
+    buf: AudioBuffer,
+    ref: AudioBuffer,
+    filter_len: int = 32,
+    step_size: float = 0.01,
+    normalized: bool = True,
+) -> tuple[AudioBuffer, AudioBuffer]:
+    """LMS (Least Mean Squares) adaptive filter.
+
+    Parameters
+    ----------
+    buf : AudioBuffer
+        Input (desired) signal.
+    ref : AudioBuffer
+        Reference (noise) signal to be adaptively filtered and subtracted.
+    filter_len : int
+        Number of filter taps.
+    step_size : float
+        Adaptation step size (mu).
+    normalized : bool
+        If True, use Normalized LMS (step_size normalized by input power).
+
+    Returns
+    -------
+    tuple[AudioBuffer, AudioBuffer]
+        (output, error) — output is the filtered reference, error is buf - output.
+    """
+    if buf.sample_rate != ref.sample_rate:
+        raise ValueError(
+            f"Sample rate mismatch: buf={buf.sample_rate}, ref={ref.sample_rate}"
+        )
+    if buf.frames != ref.frames:
+        raise ValueError(
+            f"Frame count mismatch: buf={buf.frames}, ref={ref.frames}"
+        )
+
+    n_frames = buf.frames
+    n_ch = max(buf.channels, ref.channels)
+
+    out_data = np.zeros((n_ch, n_frames), dtype=np.float32)
+    err_data = np.zeros((n_ch, n_frames), dtype=np.float32)
+
+    for ch in range(n_ch):
+        d = buf.data[min(ch, buf.channels - 1)].astype(np.float64)
+        x = ref.data[min(ch, ref.channels - 1)].astype(np.float64)
+        w = np.zeros(filter_len, dtype=np.float64)
+        x_buf = np.zeros(filter_len, dtype=np.float64)
+        eps = 1e-8
+
+        for i in range(n_frames):
+            # Shift delay line
+            x_buf[1:] = x_buf[:-1]
+            x_buf[0] = x[i]
+
+            # Filter output
+            y = np.dot(w, x_buf)
+            e = d[i] - y
+
+            # Weight update
+            if normalized:
+                norm = np.dot(x_buf, x_buf) + eps
+                w += (step_size / norm) * e * x_buf
+            else:
+                w += step_size * e * x_buf
+
+            out_data[ch, i] = np.float32(y)
+            err_data[ch, i] = np.float32(e)
+
+    output = AudioBuffer(
+        out_data,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+    error = AudioBuffer(
+        err_data,
+        sample_rate=buf.sample_rate,
+        channel_layout=buf.channel_layout,
+        label=buf.label,
+    )
+    return output, error
+
+
 def stereo_widen(buf: AudioBuffer, width: float = 1.5) -> AudioBuffer:
     """Adjust stereo width via mid-side processing.
 

@@ -642,3 +642,68 @@ def resample_fft(buf: AudioBuffer, target_sr: float) -> AudioBuffer:
         channel_layout=buf.channel_layout,
         label=buf.label,
     )
+
+
+# ---------------------------------------------------------------------------
+# GCC-PHAT delay estimation
+# ---------------------------------------------------------------------------
+
+
+def gcc_phat(
+    buf: AudioBuffer,
+    ref: AudioBuffer,
+    sample_rate: float | None = None,
+) -> tuple[float, np.ndarray]:
+    """Estimate time delay between two signals using GCC-PHAT.
+
+    Parameters
+    ----------
+    buf : AudioBuffer
+        Signal of interest (mono or mixed to mono).
+    ref : AudioBuffer
+        Reference signal (mono or mixed to mono).
+    sample_rate : float or None
+        Override sample rate for delay computation. Defaults to ``buf.sample_rate``.
+
+    Returns
+    -------
+    tuple[float, np.ndarray]
+        (delay_seconds, correlation) — delay in seconds (positive means *buf*
+        is delayed relative to *ref*), and the full GCC-PHAT correlation array.
+    """
+    sr = sample_rate if sample_rate is not None else buf.sample_rate
+
+    a = np.mean(buf.data, axis=0).astype(np.float64) if buf.channels > 1 else buf.data[0].astype(np.float64)
+    b = np.mean(ref.data, axis=0).astype(np.float64) if ref.channels > 1 else ref.data[0].astype(np.float64)
+
+    n = len(a) + len(b) - 1
+    # Next power of 2
+    fft_size = 1
+    while fft_size < n:
+        fft_size *= 2
+
+    A = np.fft.rfft(a, n=fft_size)
+    B = np.fft.rfft(b, n=fft_size)
+
+    # Cross-spectrum with phase transform (PHAT) weighting
+    cross = A * np.conj(B)
+    magnitude = np.abs(cross)
+    eps = 1e-10
+    cross_phat = cross / (magnitude + eps)
+
+    corr = np.fft.irfft(cross_phat, n=fft_size)
+
+    # Find the peak — consider both positive and negative delays
+    # Positive lags: corr[0:len_a], negative lags: corr[fft_size-len_b+1:]
+    max_lag = min(len(a), len(b))
+    # Build candidate region: negative lags (buf leads) and positive lags (buf lags)
+    candidates = np.concatenate([corr[:max_lag], corr[fft_size - max_lag + 1:]])
+    peak_idx = np.argmax(candidates)
+
+    if peak_idx < max_lag:
+        delay_samples = peak_idx
+    else:
+        delay_samples = peak_idx - len(candidates)
+
+    delay_seconds = float(delay_samples) / sr
+    return delay_seconds, corr[:n].astype(np.float32)

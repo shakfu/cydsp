@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pure NumPy DSP algorithms** -- 7 new functions added for API completeness without scipy dependency
+  - `ops.xcorr(buf_a, buf_b=None)` -- FFT-based cross-correlation (or autocorrelation in single-arg form)
+  - `ops.hilbert(buf)` -- amplitude envelope via analytic signal (FFT method)
+  - `ops.envelope(buf)` -- alias for `hilbert`
+  - `ops.median_filter(buf, kernel_size=3)` -- per-channel median filtering via stride tricks
+  - `ops.lms_filter(buf, ref, filter_len=32, step_size=0.01, normalized=True)` -- NLMS adaptive filter returning `(output, error)`
+  - `effects.agc(buf, target_level, max_gain_db, average_len, attack, release)` -- automatic gain control with asymmetric attack/release
+  - `analysis.gcc_phat(buf, ref, sample_rate)` -- GCC-PHAT time-delay estimation returning `(delay_seconds, correlation)`
+
 - **Demo scripts** (`demos/`) -- 15 runnable demo scripts showcasing the full API surface
   - `demo_filters.py` -- 13 biquad filter variants (lowpass, highpass, bandpass, notch, peak, shelving)
   - `demo_modulation.py` -- 10 modulation effects (chorus, flanger, phaser, tremolo)
@@ -145,6 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Pitch detection: `pitch_detect` (YIN algorithm)
   - Onset detection: `onset_detect` (spectral flux with peak picking)
   - Resampling: `resample` (madronalib backend), `resample_fft` (FFT-based)
+  - Delay estimation: `gcc_phat` (GCC-PHAT)
 
 - **Composed effects** (`cydsp.effects`)
   - `saturate` (soft/hard/tape modes), `exciter`, `de_esser`, `parallel_compress`
@@ -152,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `reverb` with FDN backend and presets (room, hall, plate, chamber, cathedral)
   - `master` -- mastering chain (dc_block, EQ, compress, limit, normalize_lufs)
   - `vocal_chain` -- vocal processing chain (de-esser, EQ, compress, limit, normalize)
+  - `agc` -- automatic gain control with asymmetric attack/release
 
 - **Core DSP operations** (`cydsp.ops`)
   - Delay: `delay`, `delay_varying`
@@ -163,6 +174,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `lfo` -- cubic LFO with rate/depth variation
   - Normalization: `normalize_peak`, `trim_silence`, `fade_in`, `fade_out`
   - Stereo: `pan`, `mid_side_encode`, `mid_side_decode`, `stereo_widen`
+  - Correlation: `xcorr` (FFT-based cross-/auto-correlation)
+  - Analytic signal: `hilbert`, `envelope`
+  - Filtering: `median_filter`, `lms_filter`
 
 - **Biquad filter wrappers** (`cydsp.effects`)
   - `lowpass`, `highpass`, `bandpass`, `notch`, `peak`, `peak_db`

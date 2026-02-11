@@ -204,7 +204,7 @@ raw = io.write_wav_bytes(buf, bit_depth=16)  # serialize to WAV bytes
 
 ### `cydsp.ops` -- Core DSP operations
 
-Low-level building blocks: delay, envelopes, FFT, convolution, sample rates, mixing, panning, normalization.
+Low-level building blocks: delay, envelopes, FFT, convolution, sample rates, mixing, panning, normalization, cross-correlation, Hilbert transform, median filter, LMS adaptive filter.
 
 ```python
 from cydsp import ops
@@ -252,11 +252,25 @@ ops.pan(buf, position=0.3)     # equal-power pan
 ops.mid_side_encode(buf)
 ops.mid_side_decode(buf)
 ops.stereo_widen(buf, width=1.5)
+
+# Cross-correlation
+corr = ops.xcorr(buf_a, buf_b)        # cross-correlation
+auto = ops.xcorr(buf)                  # autocorrelation
+
+# Hilbert / envelope
+env = ops.hilbert(buf)                 # analytic signal envelope
+env = ops.envelope(buf)                # alias for hilbert
+
+# Median filter
+ops.median_filter(buf, kernel_size=5)
+
+# LMS adaptive filter
+output, error = ops.lms_filter(buf, ref, filter_len=32, step_size=0.01)
 ```
 
 ### `cydsp.effects` -- Filters, effects, dynamics, mastering
 
-52 functions covering signalsmith biquad filters, DaisySP effects/filters/dynamics, composed effects, reverbs, mastering chains, and STK effects.
+53 functions covering signalsmith biquad filters, DaisySP effects/filters/dynamics, composed effects, reverbs, mastering chains, STK effects, and automatic gain control.
 
 #### Biquad filters (signalsmith)
 
@@ -352,6 +366,12 @@ effects.vocal_chain(buf, de_ess_freq=6000.0, comp_threshold=-18.0)
 effects.stk_reverb(buf, algorithm="freeverb", decay=1.5, mix=0.3)
 effects.stk_chorus(buf, mod_depth=0.02, mod_freq=1.0, mix=0.5)
 effects.stk_echo(buf, delay=0.25, max_delay=1.0, mix=0.5)
+```
+
+#### Automatic gain control
+
+```python
+effects.agc(buf, target_level=1.0, max_gain_db=60.0, average_len=100, attack=0.01, release=0.01)
 ```
 
 ### `cydsp.spectral` -- STFT and spectral processing
@@ -455,6 +475,9 @@ onsets = analysis.onset_detect(buf, method="spectral_flux", threshold=0.5)
 # Resampling
 buf_48k = analysis.resample(buf, target_sr=48000.0)       # madronalib backend
 buf_22k = analysis.resample_fft(buf, target_sr=22050.0)   # FFT-based
+
+# GCC-PHAT delay estimation
+delay_sec, corr = analysis.gcc_phat(buf, ref)
 ```
 
 ### `cydsp.stream` -- Real-time streaming infrastructure
@@ -542,11 +565,11 @@ cydsp/
   _helpers.py          # shared private utilities
   buffer.py            # AudioBuffer class
   io.py                # audio file I/O (WAV + FLAC)
-  ops.py               # delay, envelopes, FFT, convolution, rates, mix, pan
-  effects.py           # filters, effects, dynamics, reverb, mastering
+  ops.py               # delay, envelopes, FFT, convolution, rates, mix, pan, xcorr, hilbert, median, LMS
+  effects.py           # filters, effects, dynamics, reverb, mastering, AGC
   spectral.py          # STFT, spectral transforms, eq_match
   synthesis.py         # oscillators, noise, drums, physical modeling
-  analysis.py          # loudness, spectral features, pitch, onsets, resample
+  analysis.py          # loudness, spectral features, pitch, onsets, resample, gcc_phat
   stream.py            # ring buffer, block processors, overlap-add
 ```
 

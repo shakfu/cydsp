@@ -676,3 +676,187 @@ class TestMidSide:
         buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=48000.0, seed=0)
         with pytest.raises(ValueError, match="stereo"):
             ops.stereo_widen(buf)
+
+
+# ---------------------------------------------------------------------------
+# Cross-correlation
+# ---------------------------------------------------------------------------
+
+
+class TestXcorr:
+    def test_autocorrelation_peak_at_zero(self):
+        buf = AudioBuffer.sine(440.0, frames=1024, sample_rate=48000.0)
+        corr = ops.xcorr(buf)
+        # Peak of autocorrelation should be at lag 0
+        assert np.argmax(corr) == 0
+
+    def test_autocorrelation_symmetric(self):
+        buf = AudioBuffer.noise(channels=1, frames=512, sample_rate=48000.0, seed=42)
+        corr = ops.xcorr(buf)
+        n = buf.frames
+        # Autocorrelation output length is 2*N - 1
+        assert len(corr) == 2 * n - 1
+
+    def test_cross_correlation_known_delay(self):
+        """Cross-correlate a delayed signal with original; peak at the delay lag."""
+        n = 256
+        delay = 20
+        # buf_a has impulse at `delay`, buf_b at 0
+        data_a = np.zeros((1, n), dtype=np.float32)
+        data_a[0, delay] = 1.0
+        data_b = np.zeros((1, n), dtype=np.float32)
+        data_b[0, 0] = 1.0
+        buf_a = AudioBuffer(data_a, sample_rate=48000.0)
+        buf_b = AudioBuffer(data_b, sample_rate=48000.0)
+        corr = ops.xcorr(buf_a, buf_b)
+        assert np.argmax(corr) == delay
+
+    def test_output_dtype(self):
+        buf = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=0)
+        corr = ops.xcorr(buf)
+        assert corr.dtype == np.float32
+
+    def test_multichannel_mixed_to_mono(self):
+        buf = AudioBuffer.noise(channels=2, frames=256, sample_rate=48000.0, seed=0)
+        corr = ops.xcorr(buf)
+        assert corr.ndim == 1
+
+
+# ---------------------------------------------------------------------------
+# Hilbert / Envelope
+# ---------------------------------------------------------------------------
+
+
+class TestHilbert:
+    def test_envelope_of_sine_is_constant(self):
+        """Envelope of a pure sine should be approximately constant (~1.0)."""
+        buf = AudioBuffer.sine(440.0, frames=4096, sample_rate=48000.0)
+        env = ops.hilbert(buf)
+        # Skip edges (transient)
+        mid = env.data[0, 512:-512]
+        np.testing.assert_allclose(mid, 1.0, atol=0.05)
+
+    def test_envelope_shape(self):
+        buf = AudioBuffer.noise(channels=2, frames=1024, sample_rate=48000.0, seed=0)
+        env = ops.hilbert(buf)
+        assert env.channels == 2
+        assert env.frames == 1024
+
+    def test_envelope_non_negative(self):
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=48000.0, seed=0)
+        env = ops.hilbert(buf)
+        assert np.all(env.data >= 0)
+
+    def test_envelope_alias(self):
+        buf = AudioBuffer.sine(440.0, frames=1024, sample_rate=48000.0)
+        env1 = ops.hilbert(buf)
+        env2 = ops.envelope(buf)
+        np.testing.assert_array_equal(env1.data, env2.data)
+
+    def test_metadata_preserved(self):
+        buf = AudioBuffer.noise(
+            channels=1, frames=1024, sample_rate=44100.0, seed=0, label="hil"
+        )
+        env = ops.hilbert(buf)
+        assert env.sample_rate == 44100.0
+        assert env.label == "hil"
+
+
+# ---------------------------------------------------------------------------
+# Median filter
+# ---------------------------------------------------------------------------
+
+
+class TestMedianFilter:
+    def test_removes_impulse_noise(self):
+        """Median filter should remove isolated spike in constant signal."""
+        data = np.ones((1, 128), dtype=np.float32)
+        data[0, 64] = 100.0  # spike
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = ops.median_filter(buf, kernel_size=3)
+        # Spike should be removed
+        assert result.data[0, 64] == pytest.approx(1.0)
+
+    def test_preserves_constant_signal(self):
+        data = np.full((1, 256), 5.0, dtype=np.float32)
+        buf = AudioBuffer(data, sample_rate=48000.0)
+        result = ops.median_filter(buf, kernel_size=5)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-6)
+
+    def test_multichannel(self):
+        buf = AudioBuffer.noise(channels=2, frames=256, sample_rate=48000.0, seed=0)
+        result = ops.median_filter(buf, kernel_size=5)
+        assert result.channels == 2
+        assert result.frames == 256
+
+    def test_kernel_size_1_passthrough(self):
+        buf = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=0)
+        result = ops.median_filter(buf, kernel_size=1)
+        np.testing.assert_allclose(result.data, buf.data, atol=1e-6)
+
+    def test_even_kernel_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=0)
+        with pytest.raises(ValueError, match="kernel_size"):
+            ops.median_filter(buf, kernel_size=4)
+
+    def test_output_dtype(self):
+        buf = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=0)
+        result = ops.median_filter(buf, kernel_size=3)
+        assert result.data.dtype == np.float32
+
+
+# ---------------------------------------------------------------------------
+# LMS adaptive filter
+# ---------------------------------------------------------------------------
+
+
+class TestLmsFilter:
+    def test_cancels_correlated_noise(self):
+        """LMS should reduce correlated noise component."""
+        rng = np.random.default_rng(42)
+        n = 2048
+        # Clean signal
+        t = np.arange(n, dtype=np.float32) / 48000.0
+        clean = np.sin(2.0 * np.pi * 440.0 * t).astype(np.float32)
+        # Noise reference
+        noise_ref = rng.standard_normal(n).astype(np.float32) * 0.3
+        # Desired = clean + noise (correlated with ref)
+        desired = clean + noise_ref
+        buf = AudioBuffer(desired.reshape(1, -1), sample_rate=48000.0)
+        ref = AudioBuffer(noise_ref.reshape(1, -1), sample_rate=48000.0)
+        output, error = ops.lms_filter(buf, ref, filter_len=32, step_size=0.05)
+        # After adaptation, error should resemble clean signal
+        # Check that error energy is less than desired energy (noise reduced)
+        desired_energy = np.sum(desired**2)
+        error_energy = np.sum(error.data**2)
+        assert error_energy < desired_energy
+
+    def test_output_shapes(self):
+        n = 512
+        buf = AudioBuffer.noise(channels=1, frames=n, sample_rate=48000.0, seed=0)
+        ref = AudioBuffer.noise(channels=1, frames=n, sample_rate=48000.0, seed=1)
+        output, error = ops.lms_filter(buf, ref, filter_len=16)
+        assert output.frames == n
+        assert error.frames == n
+        assert output.channels == 1
+        assert error.channels == 1
+
+    def test_sample_rate_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=256, sample_rate=48000.0, seed=0)
+        ref = AudioBuffer.noise(channels=1, frames=256, sample_rate=44100.0, seed=1)
+        with pytest.raises(ValueError, match="Sample rate"):
+            ops.lms_filter(buf, ref)
+
+    def test_frame_count_mismatch_raises(self):
+        buf = AudioBuffer.noise(channels=1, frames=256, sample_rate=48000.0, seed=0)
+        ref = AudioBuffer.noise(channels=1, frames=128, sample_rate=48000.0, seed=1)
+        with pytest.raises(ValueError, match="Frame count"):
+            ops.lms_filter(buf, ref)
+
+    def test_multichannel(self):
+        n = 512
+        buf = AudioBuffer.noise(channels=2, frames=n, sample_rate=48000.0, seed=0)
+        ref = AudioBuffer.noise(channels=2, frames=n, sample_rate=48000.0, seed=1)
+        output, error = ops.lms_filter(buf, ref, filter_len=16)
+        assert output.channels == 2
+        assert error.channels == 2

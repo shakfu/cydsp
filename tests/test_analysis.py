@@ -535,3 +535,63 @@ class TestResampleFft:
         buf = AudioBuffer.noise(1, 100, seed=0)
         with pytest.raises(ValueError, match="positive"):
             analysis.resample_fft(buf, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# GCC-PHAT
+# ---------------------------------------------------------------------------
+
+
+class TestGccPhat:
+    def test_known_delay_detection(self):
+        """GCC-PHAT should detect a known integer sample delay."""
+        sr = 48000.0
+        n = 4096
+        rng = np.random.default_rng(42)
+        signal = rng.standard_normal(n).astype(np.float32)
+        delay_samples = 50
+        delayed = np.zeros(n, dtype=np.float32)
+        delayed[delay_samples:] = signal[: n - delay_samples]
+        buf = AudioBuffer(delayed.reshape(1, -1), sample_rate=sr)
+        ref = AudioBuffer(signal.reshape(1, -1), sample_rate=sr)
+        delay_sec, corr = analysis.gcc_phat(buf, ref)
+        estimated_samples = round(delay_sec * sr)
+        assert estimated_samples == delay_samples
+
+    def test_zero_delay(self):
+        """Identical signals should give zero delay."""
+        sr = 48000.0
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=sr, seed=42)
+        delay_sec, corr = analysis.gcc_phat(buf, buf)
+        assert abs(delay_sec) < 1.0 / sr  # within 1 sample
+
+    def test_returns_correlation_array(self):
+        sr = 48000.0
+        buf = AudioBuffer.noise(channels=1, frames=1024, sample_rate=sr, seed=0)
+        ref = AudioBuffer.noise(channels=1, frames=1024, sample_rate=sr, seed=1)
+        delay_sec, corr = analysis.gcc_phat(buf, ref)
+        assert isinstance(corr, np.ndarray)
+        assert corr.dtype == np.float32
+        assert len(corr) == 2 * 1024 - 1
+
+    def test_negative_delay(self):
+        """If ref is delayed relative to buf, delay should be negative."""
+        sr = 48000.0
+        n = 4096
+        rng = np.random.default_rng(123)
+        signal = rng.standard_normal(n).astype(np.float32)
+        delay_samples = 30
+        delayed = np.zeros(n, dtype=np.float32)
+        delayed[delay_samples:] = signal[: n - delay_samples]
+        # buf=original, ref=delayed -> buf leads -> negative delay
+        buf = AudioBuffer(signal.reshape(1, -1), sample_rate=sr)
+        ref = AudioBuffer(delayed.reshape(1, -1), sample_rate=sr)
+        delay_sec, corr = analysis.gcc_phat(buf, ref)
+        estimated_samples = round(delay_sec * sr)
+        assert estimated_samples == -delay_samples
+
+    def test_custom_sample_rate(self):
+        sr = 44100.0
+        buf = AudioBuffer.noise(channels=1, frames=2048, sample_rate=sr, seed=0)
+        delay_sec, corr = analysis.gcc_phat(buf, buf, sample_rate=sr)
+        assert abs(delay_sec) < 1.0 / sr
