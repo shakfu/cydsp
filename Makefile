@@ -112,6 +112,7 @@ demos:
 	@uv run python demos/demo_resample.py $(DEMO_INPUT)
 	@uv run python demos/demo_synthesis.py
 	@uv run python demos/demo_analysis.py $(DEMO_INPUT)
+	@uv run python demos/demo_grainflow.py $(DEMO_INPUT)
 
 # Clean build artifacts
 clean:

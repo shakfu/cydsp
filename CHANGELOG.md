@@ -18,7 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `effects.agc(buf, target_level, max_gain_db, average_len, attack, release)` -- automatic gain control with asymmetric attack/release
   - `analysis.gcc_phat(buf, ref, sample_rate)` -- GCC-PHAT time-delay estimation returning `(delay_seconds, correlation)`
 
-- **Demo scripts** (`demos/`) -- 15 runnable demo scripts showcasing the full API surface
+- **GrainflowLib bindings** (`cydsp._core.grainflow`) -- granular synthesis engine (header-only, MIT license)
+  - `GfBuffer` -- buffer wrapper bridging numpy `[channels, frames]` arrays to GrainflowLib's internal AudioFile storage
+  - `GrainCollection` -- core multi-grain granulator with block-based processing, parameter control (enum and string reflection), buffer assignment, stream management, and auto-overlap
+  - `Panner` -- stereo grain panning with three modes (bipolar, unipolar, stereo) using equal-power quarter-sine interpolation
+  - `Recorder` -- live recording into buffers with overdub, freeze, sync, and multi-band filter support
+  - `Phasor` -- clock generator for grain triggering (continuous-phase ramp [0, 1))
+  - 37 enum constants: `PARAM_*` (23 parameter names), `PTYPE_*` (5 parameter types), `STREAM_*` (4 stream modes), `BUF_*` (6 buffer types), `BUFMODE_*` (3 buffer modes), `PAN_*` (3 pan modes)
+  - String-based parameter reflection (e.g. `"delayRandom"`, `"rateOffset"`, `"channelMode"`)
+  - All processing methods release the GIL for thread safety
+  - 49 tests (`tests/test_grainflow.py`)
+  - Patched two GrainflowLib upstream bugs for `SigType=float`: `gf_utils::mod` template deduction failure, `stream` method vs member access
+
+- **Demo scripts** (`demos/`) -- 16 runnable demo scripts showcasing the full API surface
   - `demo_filters.py` -- 13 biquad filter variants (lowpass, highpass, bandpass, notch, peak, shelving)
   - `demo_modulation.py` -- 10 modulation effects (chorus, flanger, phaser, tremolo)
   - `demo_distortion.py` -- 14 distortion/saturation effects (overdrive, wavefold, bitcrush, decimator, saturate, fold)
@@ -34,9 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `demo_resample.py` -- 6 resampling variants (madronalib and FFT methods at 22k/48k/96k)
   - `demo_synthesis.py` -- 44 synthesis sounds (oscillators, FM, formant, noise, drums, physical modeling, STK instruments, sequence) -- no input file required
   - `demo_analysis.py` -- audio analysis printout (loudness, spectral features, pitch detection, onset detection, chromagram) -- no audio output
+  - `demo_grainflow.py` -- 7 granular synthesis variants (basic cloud, dense cloud, pitch shift up/down, sparse stochastic, stereo panned, recorder)
   - All file-processing scripts accept positional `infile`, optional `-o`/`--out-dir` (default `build/demo-output/`), and `-n`/`--no-normalize` to skip peak normalization
   - Peak normalization (0 dBFS) applied by default to prevent clipping on PCM output
-- `make demos` target -- runs all 15 demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
+- `make demos` target -- runs all 16 demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
 
 ## [0.1.2]
 
