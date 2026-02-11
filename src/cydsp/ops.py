@@ -678,11 +678,19 @@ def xcorr(buf_a: AudioBuffer, buf_b: AudioBuffer | None = None) -> np.ndarray:
         1D cross-correlation array of length ``len_a + len_b - 1``
         (or ``2 * len_a - 1`` for autocorrelation).
     """
-    a = np.mean(buf_a.data, axis=0).astype(np.float64) if buf_a.channels > 1 else buf_a.data[0].astype(np.float64)
+    a = (
+        np.mean(buf_a.data, axis=0).astype(np.float64)
+        if buf_a.channels > 1
+        else buf_a.data[0].astype(np.float64)
+    )
     if buf_b is None:
         b = a
     else:
-        b = np.mean(buf_b.data, axis=0).astype(np.float64) if buf_b.channels > 1 else buf_b.data[0].astype(np.float64)
+        b = (
+            np.mean(buf_b.data, axis=0).astype(np.float64)
+            if buf_b.channels > 1
+            else buf_b.data[0].astype(np.float64)
+        )
 
     full_len = len(a) + len(b) - 1
     # Next power of 2 for efficient FFT
@@ -712,6 +720,7 @@ def hilbert(buf: AudioBuffer) -> AudioBuffer:
     AudioBuffer
         Envelope of the analytic signal (real-valued).
     """
+
     def _process(x):
         n = len(x)
         X = np.fft.fft(x.astype(np.float64))
@@ -806,9 +815,7 @@ def lms_filter(
             f"Sample rate mismatch: buf={buf.sample_rate}, ref={ref.sample_rate}"
         )
     if buf.frames != ref.frames:
-        raise ValueError(
-            f"Frame count mismatch: buf={buf.frames}, ref={ref.frames}"
-        )
+        raise ValueError(f"Frame count mismatch: buf={buf.frames}, ref={ref.frames}")
 
     n_frames = buf.frames
     n_ch = max(buf.channels, ref.channels)

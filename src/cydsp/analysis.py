@@ -673,8 +673,16 @@ def gcc_phat(
     """
     sr = sample_rate if sample_rate is not None else buf.sample_rate
 
-    a = np.mean(buf.data, axis=0).astype(np.float64) if buf.channels > 1 else buf.data[0].astype(np.float64)
-    b = np.mean(ref.data, axis=0).astype(np.float64) if ref.channels > 1 else ref.data[0].astype(np.float64)
+    a = (
+        np.mean(buf.data, axis=0).astype(np.float64)
+        if buf.channels > 1
+        else buf.data[0].astype(np.float64)
+    )
+    b = (
+        np.mean(ref.data, axis=0).astype(np.float64)
+        if ref.channels > 1
+        else ref.data[0].astype(np.float64)
+    )
 
     n = len(a) + len(b) - 1
     # Next power of 2
@@ -697,7 +705,7 @@ def gcc_phat(
     # Positive lags: corr[0:len_a], negative lags: corr[fft_size-len_b+1:]
     max_lag = min(len(a), len(b))
     # Build candidate region: negative lags (buf leads) and positive lags (buf lags)
-    candidates = np.concatenate([corr[:max_lag], corr[fft_size - max_lag + 1:]])
+    candidates = np.concatenate([corr[:max_lag], corr[fft_size - max_lag + 1 :]])
     peak_idx = np.argmax(candidates)
 
     if peak_idx < max_lag:
