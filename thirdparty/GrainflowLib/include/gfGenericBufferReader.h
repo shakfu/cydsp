@@ -3,7 +3,7 @@
 #include <atomic>
 #include "gfIBufferReader.h"
 #include "gfParam.h"
-#include "AudioFile.h"
+#include <AudioFile.h>
 
 namespace Grainflow{
     template<typename SigType>
