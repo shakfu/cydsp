@@ -17,6 +17,8 @@ from cydsp._helpers import (
     _STK_INSTRUMENTS,
 )
 from cydsp._core import stk as _stk
+from cydsp._core import bloscillators as _blosc
+from cydsp._core import fxdsp as _fxdsp
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +464,216 @@ def synth_note(
         sample_rate=sample_rate,
         label=instrument,
     )
+
+
+# ---------------------------------------------------------------------------
+# Band-Limited Oscillators (PolyBLEP, BLIT, DPW)
+# ---------------------------------------------------------------------------
+
+# Map string names to PolyBLEP.Waveform enum values
+_POLYBLEP_WAVEFORMS = {
+    "sine": _blosc.PolyBLEP.Waveform.SINE,
+    "cosine": _blosc.PolyBLEP.Waveform.COSINE,
+    "triangle": _blosc.PolyBLEP.Waveform.TRIANGLE,
+    "tri": _blosc.PolyBLEP.Waveform.TRIANGLE,
+    "square": _blosc.PolyBLEP.Waveform.SQUARE,
+    "rectangle": _blosc.PolyBLEP.Waveform.RECTANGLE,
+    "rect": _blosc.PolyBLEP.Waveform.RECTANGLE,
+    "sawtooth": _blosc.PolyBLEP.Waveform.SAWTOOTH,
+    "saw": _blosc.PolyBLEP.Waveform.SAWTOOTH,
+    "ramp": _blosc.PolyBLEP.Waveform.RAMP,
+    "modified_triangle": _blosc.PolyBLEP.Waveform.MODIFIED_TRIANGLE,
+    "modified_square": _blosc.PolyBLEP.Waveform.MODIFIED_SQUARE,
+    "half_wave_rectified_sine": _blosc.PolyBLEP.Waveform.HALF_WAVE_RECTIFIED_SINE,
+    "full_wave_rectified_sine": _blosc.PolyBLEP.Waveform.FULL_WAVE_RECTIFIED_SINE,
+    "triangular_pulse": _blosc.PolyBLEP.Waveform.TRIANGULAR_PULSE,
+    "trapezoid_fixed": _blosc.PolyBLEP.Waveform.TRAPEZOID_FIXED,
+    "trapezoid_variable": _blosc.PolyBLEP.Waveform.TRAPEZOID_VARIABLE,
+}
+
+
+def polyblep(
+    frames: int,
+    freq: float = 440.0,
+    waveform: str = "sawtooth",
+    pulse_width: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a band-limited waveform using PolyBLEP anti-aliasing.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    waveform : str
+        One of: 'sine', 'cosine', 'triangle'/'tri', 'square',
+        'rectangle'/'rect', 'sawtooth'/'saw', 'ramp',
+        'modified_triangle', 'modified_square',
+        'half_wave_rectified_sine', 'full_wave_rectified_sine',
+        'triangular_pulse', 'trapezoid_fixed', 'trapezoid_variable'.
+    pulse_width : float
+        Pulse width for rectangle/variable waveforms (0.0 to 1.0).
+    sample_rate : float
+        Output sample rate.
+    """
+    key = waveform.lower()
+    if key not in _POLYBLEP_WAVEFORMS:
+        raise ValueError(
+            f"Unknown waveform {waveform!r}, valid: {list(_POLYBLEP_WAVEFORMS.keys())}"
+        )
+    osc = _blosc.PolyBLEP(sample_rate, _POLYBLEP_WAVEFORMS[key])
+    osc.frequency = freq
+    osc.pulse_width = pulse_width
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
+
+
+def blit_saw(
+    frames: int,
+    freq: float = 220.0,
+    harmonics: int = 0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a BLIT (Band-Limited Impulse Train) sawtooth.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    harmonics : int
+        Number of harmonics (0 = maximum up to Nyquist).
+    sample_rate : float
+        Output sample rate.
+    """
+    osc = _blosc.BlitSaw(sample_rate, freq)
+    if harmonics > 0:
+        osc.set_harmonics(harmonics)
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
+
+
+def blit_square(
+    frames: int,
+    freq: float = 220.0,
+    harmonics: int = 0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a BLIT square wave with DC blocker.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    harmonics : int
+        Number of harmonics (0 = maximum up to Nyquist).
+    sample_rate : float
+        Output sample rate.
+    """
+    osc = _blosc.BlitSquare(sample_rate, freq)
+    if harmonics > 0:
+        osc.set_harmonics(harmonics)
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
+
+
+def dpw_saw(
+    frames: int,
+    freq: float = 440.0,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a DPW (Differentiated Parabolic Wave) sawtooth.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    sample_rate : float
+        Output sample rate.
+    """
+    osc = _blosc.DPWSaw(sample_rate, freq)
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
+
+
+def dpw_pulse(
+    frames: int,
+    freq: float = 440.0,
+    duty: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a DPW pulse with variable duty cycle.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    duty : float
+        Duty cycle (0.01 to 0.99, default 0.5 for square).
+    sample_rate : float
+        Output sample rate.
+    """
+    osc = _blosc.DPWPulse(sample_rate, freq)
+    osc.duty = duty
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
+
+
+# ---------------------------------------------------------------------------
+# MinBLEP Oscillator
+# ---------------------------------------------------------------------------
+
+_MINBLEP_WAVEFORMS = {
+    "saw": _fxdsp.MinBLEP.Waveform.SAW,
+    "sawtooth": _fxdsp.MinBLEP.Waveform.SAW,
+    "rsaw": _fxdsp.MinBLEP.Waveform.RSAW,
+    "square": _fxdsp.MinBLEP.Waveform.SQUARE,
+    "triangle": _fxdsp.MinBLEP.Waveform.TRIANGLE,
+    "tri": _fxdsp.MinBLEP.Waveform.TRIANGLE,
+}
+
+
+def minblep(
+    frames: int,
+    freq: float = 440.0,
+    waveform: str = "saw",
+    pulse_width: float = 0.5,
+    sample_rate: float = 48000.0,
+) -> AudioBuffer:
+    """Generate a band-limited waveform using MinBLEP anti-aliasing.
+
+    Parameters
+    ----------
+    frames : int
+        Number of samples to generate.
+    freq : float
+        Frequency in Hz.
+    waveform : str
+        One of: 'saw'/'sawtooth', 'rsaw', 'square', 'triangle'/'tri'.
+    pulse_width : float
+        Pulse width for square waveform (0.01 to 0.99).
+    sample_rate : float
+        Output sample rate.
+    """
+    key = waveform.lower()
+    if key not in _MINBLEP_WAVEFORMS:
+        raise ValueError(
+            f"Unknown waveform {waveform!r}, valid: {list(_MINBLEP_WAVEFORMS.keys())}"
+        )
+    osc = _fxdsp.MinBLEP(sample_rate, freq)
+    osc.waveform = _MINBLEP_WAVEFORMS[key]
+    osc.pulse_width = pulse_width
+    data = np.asarray(osc.generate(frames))
+    return AudioBuffer(data.reshape(1, -1), sample_rate=sample_rate)
 
 
 def synth_sequence(

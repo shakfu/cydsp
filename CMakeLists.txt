@@ -74,6 +74,47 @@ target_include_directories(grainflow-dsp INTERFACE
     thirdparty/GrainflowLib/lib/AudioFile
 )
 
+# VA Filters (header-only, MIT-style STK-4.3 license)
+add_library(vafilters-dsp INTERFACE)
+target_include_directories(vafilters-dsp INTERFACE
+    thirdparty/vafilters
+)
+
+# FX DSP algorithms (header-only)
+add_library(fxdsp INTERFACE)
+target_include_directories(fxdsp INTERFACE
+    thirdparty/fxdsp
+)
+
+# DspFilters (MIT -- Vinnie Falco)
+set(DSPFILTERS_SOURCES
+    thirdparty/DspFilters/Biquad.cpp
+    thirdparty/DspFilters/Cascade.cpp
+    thirdparty/DspFilters/Design.cpp
+    thirdparty/DspFilters/Filter.cpp
+    thirdparty/DspFilters/Param.cpp
+    thirdparty/DspFilters/PoleFilter.cpp
+    thirdparty/DspFilters/RootFinder.cpp
+    thirdparty/DspFilters/State.cpp
+    thirdparty/DspFilters/Butterworth.cpp
+    thirdparty/DspFilters/ChebyshevI.cpp
+    thirdparty/DspFilters/ChebyshevII.cpp
+    thirdparty/DspFilters/Elliptic.cpp
+    thirdparty/DspFilters/Bessel.cpp
+    thirdparty/DspFilters/Legendre.cpp
+    thirdparty/DspFilters/RBJ.cpp
+    thirdparty/DspFilters/Custom.cpp
+)
+add_library(dspfilters STATIC ${DSPFILTERS_SOURCES})
+target_include_directories(dspfilters PUBLIC
+    thirdparty/DspFilters/include
+)
+if(MSVC)
+    target_compile_options(dspfilters PRIVATE /w)
+else()
+    target_compile_options(dspfilters PRIVATE -w)
+endif()
+
 # STK (subset -- no RtAudio/RtMidi/Socket/File I/O)
 set(STK_SOURCES
     thirdparty/stk/src/Stk.cpp
@@ -145,8 +186,12 @@ nanobind_add_module(_core
     src/cydsp/_core_hisstools.cpp
     src/cydsp/_core_choc.cpp
     src/cydsp/_core_grainflow.cpp
+    src/cydsp/_core_vafilters.cpp
+    src/cydsp/_core_bloscillators.cpp
+    src/cydsp/_core_fxdsp.cpp
+    src/cydsp/_core_iirdesign.cpp
 )
-target_link_libraries(_core PRIVATE signalsmith-dsp DaisySP DaisySP_LGPL stk_subset madronalib-dsp hisstools grainflow-dsp)
+target_link_libraries(_core PRIVATE signalsmith-dsp DaisySP DaisySP_LGPL stk_subset madronalib-dsp hisstools grainflow-dsp vafilters-dsp fxdsp dspfilters)
 target_include_directories(_core SYSTEM PRIVATE thirdparty/choc)
 
 # Mark all thirdparty include dirs as SYSTEM to suppress warnings from their headers
@@ -177,6 +222,10 @@ endif()
 get_target_property(_gf_inc grainflow-dsp INTERFACE_INCLUDE_DIRECTORIES)
 if(_gf_inc)
     set_target_properties(grainflow-dsp PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_gf_inc}")
+endif()
+get_target_property(_dspf_inc dspfilters INTERFACE_INCLUDE_DIRECTORIES)
+if(_dspf_inc)
+    set_target_properties(dspfilters PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_dspf_inc}")
 endif()
 
 if(MSVC)

@@ -17,6 +17,9 @@ from cydsp._helpers import (
 )
 from cydsp._core import filters, madronalib as _madronalib
 from cydsp._core import stk as _stk
+from cydsp._core import vafilters as _va
+from cydsp._core import fxdsp as _fxdsp
+from cydsp._core import iirdesign as _iir
 
 
 # ---------------------------------------------------------------------------
@@ -1609,5 +1612,395 @@ def agc(
             out[i] = x64[i] * current_gain
 
         return out.astype(np.float32)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Virtual analog filters (Faust-generated, MIT-style STK-4.3 license)
+# ---------------------------------------------------------------------------
+
+_VA_FILTER_CLASSES = {
+    "moog_ladder": _va.MoogLadder,
+    "moog_half_ladder": _va.MoogHalfLadder,
+    "diode_ladder": _va.DiodeLadder,
+    "korg35_lpf": _va.Korg35LPF,
+    "korg35_hpf": _va.Korg35HPF,
+}
+
+
+def _va_filter(buf: AudioBuffer, cls, cutoff_hz: float, q: float) -> AudioBuffer:
+    def _process(x):
+        f = cls()
+        f.init(float(buf.sample_rate))
+        f.cutoff = cutoff_hz
+        f.q = q
+        return f.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def va_moog_ladder(
+    buf: AudioBuffer, cutoff_hz: float = 1000.0, q: float = 1.0
+) -> AudioBuffer:
+    """Moog Ladder 24 dB/oct lowpass filter (virtual analog)."""
+    return _va_filter(buf, _va.MoogLadder, cutoff_hz, q)
+
+
+def va_moog_half_ladder(
+    buf: AudioBuffer, cutoff_hz: float = 1000.0, q: float = 1.0
+) -> AudioBuffer:
+    """Moog Half-Ladder 12 dB/oct lowpass filter (virtual analog)."""
+    return _va_filter(buf, _va.MoogHalfLadder, cutoff_hz, q)
+
+
+def va_diode_ladder(
+    buf: AudioBuffer, cutoff_hz: float = 1000.0, q: float = 1.0
+) -> AudioBuffer:
+    """Diode Ladder 24 dB/oct lowpass filter (virtual analog)."""
+    return _va_filter(buf, _va.DiodeLadder, cutoff_hz, q)
+
+
+def va_korg35_lpf(
+    buf: AudioBuffer, cutoff_hz: float = 1000.0, q: float = 1.0
+) -> AudioBuffer:
+    """Korg 35 24 dB/oct lowpass filter (virtual analog)."""
+    return _va_filter(buf, _va.Korg35LPF, cutoff_hz, q)
+
+
+def va_korg35_hpf(
+    buf: AudioBuffer, cutoff_hz: float = 1000.0, q: float = 1.0
+) -> AudioBuffer:
+    """Korg 35 24 dB/oct highpass filter (virtual analog)."""
+    return _va_filter(buf, _va.Korg35HPF, cutoff_hz, q)
+
+
+def va_oberheim(
+    buf: AudioBuffer,
+    cutoff_hz: float = 1000.0,
+    q: float = 1.0,
+    mode: str = "lpf",
+) -> AudioBuffer:
+    """Oberheim multi-mode state-variable filter (virtual analog).
+
+    Args:
+        mode: One of 'lpf', 'hpf', 'bpf', 'bsf' (notch).
+    """
+    mode_map = {"lpf": 0, "hpf": 1, "bpf": 2, "bsf": 3}
+    mode_int = mode_map.get(mode)
+    if mode_int is None:
+        raise ValueError(f"Unknown mode '{mode}', expected one of {list(mode_map)}")
+
+    def _process(x):
+        f = _va.OberheimSVF()
+        f.init(float(buf.sample_rate))
+        f.cutoff = cutoff_hz
+        f.q = q
+        return f.process(x, mode_int)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Antialiased Waveshaping
+# ---------------------------------------------------------------------------
+
+
+def aa_hard_clip(buf: AudioBuffer, drive: float = 1.0) -> AudioBuffer:
+    """Antialiased hard clipper using 1st-order antiderivative method.
+
+    Parameters
+    ----------
+    drive : float
+        Input gain multiplier before clipping.
+    """
+
+    def _process(x):
+        if drive != 1.0:
+            x = x * drive
+        c = _fxdsp.HardClipper()
+        return c.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def aa_soft_clip(buf: AudioBuffer, drive: float = 1.0) -> AudioBuffer:
+    """Antialiased soft clipper (sin-based saturation) with 1st-order AA.
+
+    Parameters
+    ----------
+    drive : float
+        Input gain multiplier before saturation.
+    """
+
+    def _process(x):
+        if drive != 1.0:
+            x = x * drive
+        c = _fxdsp.SoftClipper()
+        return c.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def aa_wavefold(buf: AudioBuffer, drive: float = 1.0) -> AudioBuffer:
+    """Antialiased wavefolder (Buchla 259 style) with 2nd-order AA.
+
+    Parameters
+    ----------
+    drive : float
+        Input gain multiplier before folding.
+    """
+
+    def _process(x):
+        if drive != 1.0:
+            x = x * drive
+        c = _fxdsp.Wavefolder()
+        return c.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Classic Reverbs (Schroeder, Moorer)
+# ---------------------------------------------------------------------------
+
+
+def schroeder_reverb(
+    buf: AudioBuffer,
+    feedback: float = 0.7,
+    diffusion: float = 0.5,
+    mod_depth: float = 0.0,
+) -> AudioBuffer:
+    """Schroeder reverberator (4 parallel combs + 2 series allpasses)."""
+
+    def _process(x):
+        rev = _fxdsp.SchroederReverb()
+        rev.init(float(buf.sample_rate))
+        rev.feedback = feedback
+        rev.diffusion = diffusion
+        rev.set_mod_depth(mod_depth)
+        return rev.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+def moorer_reverb(
+    buf: AudioBuffer,
+    feedback: float = 0.7,
+    diffusion: float = 0.7,
+    mod_depth: float = 0.1,
+) -> AudioBuffer:
+    """Moorer reverberator (early reflections + 4 combs + 2 allpasses)."""
+
+    def _process(x):
+        rev = _fxdsp.MoorerReverb()
+        rev.init(float(buf.sample_rate))
+        rev.feedback = feedback
+        rev.diffusion = diffusion
+        rev.set_mod_depth(mod_depth)
+        return rev.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# Formant Filter
+# ---------------------------------------------------------------------------
+
+_VOWEL_MAP = {"a": 0, "e": 1, "i": 2, "o": 3, "u": 4}
+
+
+def formant_filter(
+    buf: AudioBuffer,
+    vowel: int | str = "a",
+) -> AudioBuffer:
+    """Apply vowel formant filter using cascaded bandpass biquads.
+
+    Parameters
+    ----------
+    vowel : int or str
+        Vowel index (0-4) or name ('a', 'e', 'i', 'o', 'u').
+    """
+    if isinstance(vowel, str):
+        v = _VOWEL_MAP.get(vowel.lower())
+        if v is None:
+            raise ValueError(
+                f"Unknown vowel '{vowel}', expected one of {list(_VOWEL_MAP)}"
+            )
+    else:
+        v = int(vowel)
+
+    def _process(x):
+        ff = _fxdsp.FormantFilter()
+        ff.init(float(buf.sample_rate))
+        ff.vowel = v
+        return ff.process(x)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# PSOLA Pitch Shifting
+# ---------------------------------------------------------------------------
+
+
+def psola_pitch_shift(
+    buf: AudioBuffer,
+    semitones: float = 0.0,
+) -> AudioBuffer:
+    """Pitch shift using PSOLA (Pitch-Synchronous Overlap-Add).
+
+    Parameters
+    ----------
+    semitones : float
+        Pitch shift in semitones (positive = up, negative = down).
+    """
+
+    def _process(x):
+        return _fxdsp.psola_pitch_shift(x, float(buf.sample_rate), semitones)
+
+    return _process_per_channel(buf, _process)
+
+
+# ---------------------------------------------------------------------------
+# IIR filter design (DspFilters -- Butterworth, Chebyshev, Elliptic, Bessel)
+# ---------------------------------------------------------------------------
+
+_IIR_FAMILIES = {
+    "butterworth": 0,
+    "butter": 0,
+    "chebyshev1": 1,
+    "cheby1": 1,
+    "chebyshev2": 2,
+    "cheby2": 2,
+    "elliptic": 3,
+    "ellip": 3,
+    "bessel": 4,
+}
+
+_IIR_TYPES = {
+    "lowpass": 0,
+    "lp": 0,
+    "highpass": 1,
+    "hp": 1,
+    "bandpass": 2,
+    "bp": 2,
+    "bandstop": 3,
+    "bs": 3,
+    "notch": 3,
+}
+
+
+def iir_design(
+    family: str,
+    filter_type: str,
+    order: int,
+    sample_rate: float,
+    freq: float,
+    width: float = 0.0,
+    ripple_db: float = 0.0,
+    rolloff: float = 0.0,
+) -> np.ndarray:
+    """Design an IIR filter and return SOS coefficients.
+
+    Returns an array of shape ``[n_sections, 6]`` where each row is
+    ``[b0, b1, b2, a0, a1, a2]`` with ``a0 = 1.0``.
+
+    Parameters
+    ----------
+    family : str
+        Filter family: butterworth/butter, chebyshev1/cheby1,
+        chebyshev2/cheby2, elliptic/ellip, bessel.
+    filter_type : str
+        Filter type: lowpass/lp, highpass/hp, bandpass/bp, bandstop/bs/notch.
+    order : int
+        Filter order (1-16).
+    sample_rate : float
+        Sample rate in Hz.
+    freq : float
+        Cutoff (LP/HP) or center (BP/BS) frequency in Hz.
+    width : float
+        Bandwidth in Hz (required for bandpass/bandstop).
+    ripple_db : float
+        Passband ripple for Chebyshev I / Elliptic (dB).
+        Stopband attenuation for Chebyshev II (dB).
+    rolloff : float
+        Transition width for Elliptic filters (range approx -16 to 4).
+    """
+    fam = _IIR_FAMILIES.get(family.lower())
+    if fam is None:
+        raise ValueError(
+            f"Unknown family {family!r}, valid: {list(_IIR_FAMILIES.keys())}"
+        )
+    typ = _IIR_TYPES.get(filter_type.lower())
+    if typ is None:
+        raise ValueError(
+            f"Unknown type {filter_type!r}, valid: {list(_IIR_TYPES.keys())}"
+        )
+    return np.asarray(
+        _iir.design(fam, typ, order, sample_rate, freq, width, ripple_db, rolloff)
+    )
+
+
+def iir_filter(
+    buf: AudioBuffer,
+    family: str = "butterworth",
+    filter_type: str = "lowpass",
+    order: int = 4,
+    freq: float = 1000.0,
+    width: float = 0.0,
+    ripple_db: float = 0.0,
+    rolloff: float = 0.0,
+) -> AudioBuffer:
+    """Apply a multi-order IIR filter.
+
+    Supports Butterworth, Chebyshev I/II, Elliptic, and Bessel filter
+    families with orders up to 16, in lowpass, highpass, bandpass, and
+    bandstop configurations.
+
+    Parameters
+    ----------
+    family : str
+        butterworth/butter, chebyshev1/cheby1, chebyshev2/cheby2,
+        elliptic/ellip, bessel.
+    filter_type : str
+        lowpass/lp, highpass/hp, bandpass/bp, bandstop/bs/notch.
+    order : int
+        Filter order (1-16).
+    freq : float
+        Cutoff or center frequency in Hz.
+    width : float
+        Bandwidth in Hz (required for bandpass/bandstop).
+    ripple_db : float
+        Passband ripple (Chebyshev I, Elliptic) or stopband attenuation
+        (Chebyshev II) in dB.
+    rolloff : float
+        Transition width for Elliptic filters.
+    """
+    fam = _IIR_FAMILIES.get(family.lower())
+    if fam is None:
+        raise ValueError(
+            f"Unknown family {family!r}, valid: {list(_IIR_FAMILIES.keys())}"
+        )
+    typ = _IIR_TYPES.get(filter_type.lower())
+    if typ is None:
+        raise ValueError(
+            f"Unknown type {filter_type!r}, valid: {list(_IIR_TYPES.keys())}"
+        )
+
+    def _process(x: np.ndarray) -> np.ndarray:
+        return np.asarray(
+            _iir.apply(
+                x,
+                fam,
+                typ,
+                order,
+                float(buf.sample_rate),
+                freq,
+                width,
+                ripple_db,
+                rolloff,
+            )
+        )
 
     return _process_per_channel(buf, _process)

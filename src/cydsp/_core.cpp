@@ -11,4 +11,8 @@ NB_MODULE(_core, m) {
     bind_hisstools(m);
     bind_choc(m);
     bind_grainflow(m);
+    bind_vafilters(m);
+    bind_bloscillators(m);
+    bind_fxdsp(m);
+    bind_iirdesign(m);
 }

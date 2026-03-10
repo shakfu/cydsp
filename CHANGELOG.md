@@ -7,9 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Added
 
-- **Pure NumPy DSP algorithms** -- 7 new functions added for API completeness without scipy dependency
+- **Virtual Analog filter bindings** (`cydsp._core.vafilters`, `cydsp.effects`) -- 6 Faust-derived analog-modeled filters
+  - `MoogLadder` -- 24 dB/oct Moog ladder lowpass with resonance
+  - `MoogHalfLadder` -- 12 dB/oct Moog half-ladder lowpass
+  - `DiodeLadder` -- 24 dB/oct diode ladder lowpass with internal soft clipping
+  - `Korg35LPF` -- 24 dB/oct Korg-35 lowpass
+  - `Korg35HPF` -- 24 dB/oct Korg-35 highpass
+  - `OberheimSVF` -- multi-mode state-variable filter with 4 simultaneous outputs (LPF, HPF, BPF, BSF)
+  - Python wrappers: `va_moog_ladder`, `va_moog_half_ladder`, `va_diode_ladder`, `va_korg35_lpf`, `va_korg35_hpf`, `va_oberheim`
+  - 44 tests (`tests/test_vafilters.py`)
+
+- **Band-limited oscillator bindings** (`cydsp._core.bloscillators`, `cydsp.synthesis`) -- 5 anti-aliased oscillator algorithms
+  - `PolyBLEP` -- polynomial band-limited step oscillator with 14 waveforms (sine, cosine, triangle, square, rectangle, sawtooth, ramp, modified triangle/square, half/full-wave rectified sine, triangular pulse, trapezoid fixed/variable)
+  - `BlitSaw` -- BLIT (band-limited impulse train) sawtooth with configurable harmonics
+  - `BlitSquare` -- BLIT square wave with DC blocker
+  - `DPWSaw` -- DPW (differentiated parabolic wave) sawtooth
+  - `DPWPulse` -- DPW pulse with variable duty cycle
+  - Python wrappers: `polyblep`, `blit_saw`, `blit_square`, `dpw_saw`, `dpw_pulse`
+  - 83 tests (`tests/test_bloscillators.py`)
+
+- **FX DSP algorithms** (`cydsp._core.fxdsp`, `cydsp.effects`, `cydsp.synthesis`) -- 6 algorithms from cleaned/rewritten third-party sources
+  - `HardClipper` -- first-order antiderivative antialiased hard clipping
+  - `SoftClipper` -- first-order antiderivative antialiased soft clipping (sin saturation)
+  - `Wavefolder` -- second-order antiderivative antialiased wavefolding
+  - `SchroederReverb` -- classic 4 parallel feedback combs + 2 series allpasses with optional LFO modulation
+  - `MoorerReverb` -- Schroeder extension with 18-tap early reflections delay network
+  - `MinBLEP` -- minimum band-limited step oscillator (saw, reverse saw, square, triangle) with precomputed 2048-element table at 64x oversampling
+  - `PsolaShifter` -- PSOLA pitch shifting with autocorrelation pitch detection and grain-based resynthesis
+  - `FormantFilter` -- 3 cascaded bandpass biquads tuned to vowel formant frequencies (A/E/I/O/U) with blending
+  - Python wrappers: `aa_hard_clip`, `aa_soft_clip`, `aa_wavefold`, `schroeder_reverb`, `moorer_reverb`, `formant_filter`, `psola_pitch_shift`, `minblep`
+  - 69 tests (`tests/test_fxdsp.py`)
+
+- **Multi-order IIR filter design** (`cydsp._core.iirdesign`, `cydsp.effects`) -- 5 classical filter families via DspFilters (Vinnie Falco, MIT)
+  - Butterworth (maximally flat passband)
+  - Chebyshev Type I (passband ripple, sharper rolloff)
+  - Chebyshev Type II (stopband ripple, flat passband)
+  - Elliptic (sharpest transition, ripple in both bands)
+  - Bessel (linear phase, minimal ringing)
+  - Each family supports lowpass, highpass, bandpass, bandstop configurations
+  - Orders 1-16, returning SOS (second-order sections) coefficients
+  - `IIRFilter` class for stateful processing with `setup()`/`process()`/`reset()`/`sos()`
+  - `iir_design()` returns SOS coefficient array `[n_sections, 6]`
+  - `iir_filter()` applies multi-order IIR filter to AudioBuffer
+  - 41 tests (`tests/test_iirdesign.py`)
+
+- **Pure NumPy DSP algorithms** -- 7 new functions for API completeness without scipy dependency
   - `ops.xcorr(buf_a, buf_b=None)` -- FFT-based cross-correlation (or autocorrelation in single-arg form)
   - `ops.hilbert(buf)` -- amplitude envelope via analytic signal (FFT method)
   - `ops.envelope(buf)` -- alias for `hilbert`
@@ -47,9 +93,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `demo_synthesis.py` -- 44 synthesis sounds (oscillators, FM, formant, noise, drums, physical modeling, STK instruments, sequence) -- no input file required
   - `demo_analysis.py` -- audio analysis printout (loudness, spectral features, pitch detection, onset detection, chromagram) -- no audio output
   - `demo_grainflow.py` -- 7 granular synthesis variants (basic cloud, dense cloud, pitch shift up/down, sparse stochastic, stereo panned, recorder)
+  - `demo_fxdsp.py` -- 28 FX DSP outputs: antialiased waveshaping (6), Schroeder/Moorer reverbs (6), formant vowels (5), PSOLA pitch shifts (6), minBLEP waveforms (5)
+  - `demo_iir_filters.py` -- 23 IIR filter outputs: Butterworth (6), Chebyshev I (4), Chebyshev II (3), Elliptic (3), Bessel (4), order comparison (3)
   - All file-processing scripts accept positional `infile`, optional `-o`/`--out-dir` (default `build/demo-output/`), and `-n`/`--no-normalize` to skip peak normalization
   - Peak normalization (0 dBFS) applied by default to prevent clipping on PCM output
-- `make demos` target -- runs all 16 demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
+- `make demos` target -- runs all 18 demo scripts in sequence (`DEMO_INPUT=demos/s01.wav` by default)
+
+### Fixed
+
+- **Moorer reverb early reflections routing** -- early reflections now bypass comb filters and mix directly to output (classic Moorer design)
+- **Moorer reverb delay read direction** -- fixed EarlyReflections reading forward (unwritten buffer) instead of backward (past samples)
+- **Schroeder reverb bugs** (from original source) -- all 4 combs incorrectly used same filter instance; allpass path used uninitialized variable
+- **DPW oscillator startup transient** -- seeded differentiator state in `reset()` to eliminate first-sample amplitude spike (~25x) caused by uninitialized `last_value_`
+- **Faust VA filter NaN** -- seeded parameter smoothing registers in MoogLadder, MoogHalfLadder, and DiodeLadder to prevent `log10(~0)` producing -inf/NaN on first samples
 
 ## [0.1.2]
 
