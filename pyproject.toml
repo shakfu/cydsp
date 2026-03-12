@@ -1,6 +1,6 @@
 [project]
 name = "cydsp"
-version = "0.1.3r"
+version = "0.1.3post1"
 description = "High-performance Python DSP toolkit built on C++ libraries via nanobind"
 readme = "README.md"
 license = { text = "MIT" }
